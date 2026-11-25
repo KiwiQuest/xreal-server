@@ -141,7 +141,6 @@ class Home(Module):
         app = self.ctx.app()
         base = [
             Tile("windows", "Windows", "plocha, myš hlavou", "⊞", self._to_windows),
-            Tile("osk", "Klávesnice", "na obrazovce", "⌨", lambda: self._start("osk.exe")),
             Tile("browser", "Prohlížeč", "web", "◎", lambda: self._open("https://www.google.com")),
             Tile("camera", "Kamera Eye", "zapnout a ukázat", "◉", self._camera,
                  enabled=os.path.isfile(self._eye_script())),

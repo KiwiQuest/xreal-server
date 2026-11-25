@@ -27,7 +27,7 @@ from .settings import SettingsWindow
 from .states import BAG, DESK, MODE_LABELS, SUSPEND, WAITING, Machine
 
 TICK_MS = 30          # první tik; dál podle režimu (profiles.Plan.tick_ms)
-ALL_MODULES = ("home", "head_mouse", "clock", "voice")
+ALL_MODULES = ("home", "keyboard", "head_mouse", "clock", "voice")
 TRAY_ICON = {DESK: "desk", BAG: "bag", WAITING: "wait", SUSPEND: "wait"}
 BEEPS = {"bag": ((880, 110), (1320, 150)), "wait": ((660, 220),), "warn": ((520, 140), (520, 140)),
          "lost": ((440, 260),)}

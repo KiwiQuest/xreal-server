@@ -44,6 +44,7 @@ class Config:
     # --- moduly ---
     modules: dict = field(default_factory=lambda: {
         "home": True,
+        "keyboard": True,
         "head_mouse": True,
         "clock": True,
         "voice": False,

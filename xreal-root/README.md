@@ -53,9 +53,15 @@ otočením hlavy se mezi nimi rozhlížíš a uprostřed pohledu je zaměřovač
 (podržet 1,6 s, kroužek se naplní) nebo krátkým stiskem tlačítka brýlí. Pozadí je černé, takže v brýlích
 je průhledné a Domov visí ve skutečném prostoru. Když se ztratí z dohledu, sám se po 3 s vrátí před tebe.
 
-Dlaždice teď: Windows (zavře Domov, zapne myš hlavou), klávesnice na obrazovce, prohlížeč, kamera Eye,
+Dlaždice teď: Windows (zavře Domov, zapne myš hlavou), vlastní klávesnice na obrazovce (modul `keyboard`), prohlížeč, kamera Eye,
 Průzkumník, vycentrovat, nastavení, režim Tray, hibernace (s potvrzením). Další moduly přidávají vlastní
 dlaždice přes `home_tiles()`. Zpět do Domova: podržet tlačítko brýlí → menu → „Domov“.
+
+### Klávesnice na obrazovce
+
+Klávesnice Windows (osk.exe) běží s ochranou UIAccess: klik z myši hlavou na ni nefunguje a kořen ji
+neumí ani zavřít. Proto má kořen vlastní (`keyboard`): nebere fokus, píše do aktivního okna včetně
+české diakritiky a zavírá se klávesou ✕. Otevřeš ji v Domově nebo v menu.
 
 ## Jak se chová víko
 
@@ -88,6 +94,6 @@ V systray (pravé tlačítko): stav, ruční **Režim bez rukou** (stolní PC, J
 | `koren/overlay.py` | průhledné vrstvy přes brýle |
 | `koren/glasses.py` | jediné spojení s brýlemi (IMU, tlačítko, přítomnost na USB) |
 | `koren/win.py` | systray, víko, hibernace, USB, fyzický vstup (ctypes) |
-| `koren/modules/` | moduly: `home` (Domov v brýlích), `head_mouse`, `clock`, `voice` |
+| `koren/modules/` | moduly: `home` (Domov v brýlích), `keyboard`, `head_mouse`, `clock`, `voice` |
 | `tests/` | testy čisté logiky |
 | `koren_config.json`, `logs/` | vznikají za běhu, nejsou v gitu |
