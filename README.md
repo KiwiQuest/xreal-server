@@ -44,6 +44,7 @@ Do budoucna: podpora vlastních HW senzorů a modulů (ESP32, IMU, radar) připo
 
 | Složka | Co obsahuje | Stav |
 |---|---|---|
+| [`xreal-root/`](xreal-root/) | **XREAL Kořen**: kořenová aplikace v systray. Víko + brýle → režim „notebook v tašce“, odpočet a hibernace, menu a nápověda ovládané jen hlavou a tlačítkem brýlí, modulový systém, supervizor. Katalog a návrh: [`ARCHITEKTURA.md`](xreal-root/ARCHITEKTURA.md). | první verze |
 | [`xreal-eye-rgb/`](xreal-eye-rgb/) | **Kamera XREAL Eye jako webkamera ve Windows** (RGB 1920×1080 až 60 fps + šedá SLAM kamera). Zapnutí USB funkcí přes HID kanál brýlí, MIT licence. | funguje, ověřeno |
 | [`ariel/`](ariel/) | **Ariel Core**: současné jádro serveru rozdělené na moduly (IMU, kamera, YOLO, OCR, AR kalibrace, myš hlavou, HTTP + WebSocket, tablet a HUD stránky, kontrola zraku, šifrovaný modul tváří). | hlavní větev vývoje |
 | [`xreal-web/`](xreal-web/) | Původní monolitický server (`server.py`), ze kterého vzniklo Ariel. | archiv |

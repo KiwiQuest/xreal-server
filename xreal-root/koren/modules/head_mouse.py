@@ -1,0 +1,124 @@
+"""Modul: myš hlavou z hotového XREAL Head Mouse 2.0 (Xreal mouse/xreal_suite).
+
+Bere engine beze změny (ukazování, circle click, tlačítko brýlí jako myš), jen ho krmí
+daty z kořene místo vlastního spojení, takže se s kořenem nepřetahuje o porty brýlí.
+Nastavení sdílí s Head Mouse (`xreal_config.json` v jeho složce).
+
+V režimu "notebook v tašce" se zapne sám. Když si kořen bere vstup (menu, otázka),
+myš se pozastaví a pustí případně držené tlačítko.
+"""
+import time
+
+from ..config import use_suite
+from ..menu import MenuItem
+from . import Module
+
+use_suite()
+from xreal.config import Config as MouseConfig, Runtime  # noqa: E402
+from xreal.engine import Engine, NullOutput, WinOutput   # noqa: E402
+
+
+class HeadMouse(Module):
+    id = "head_mouse"
+    name = "Myš hlavou"
+    description = "Kurzor podle pohybu hlavy, klik zastavením pohledu, tlačítko brýlí jako myš."
+    z = 200
+    needs = ("imu",)
+
+    def start(self, ctx):
+        super().start(ctx)
+        self.mcfg = MouseConfig().load()
+        self.rt = Runtime()
+        self.engine = Engine(self.mcfg, self.rt, io=NullOutput() if ctx.dry else WinOutput(),
+                             use_hotkeys=False)
+        self.engine.refresh_monitor()
+        self.paused = False
+        self.user_wants = False          # stav u stolu (zapnul si ji uživatel sám?)
+        self._t_mon = 0.0
+        self.ring = None
+        try:
+            from xreal.overlay import RingOverlay
+            self.ring = RingOverlay(ctx.tk, self.mcfg, self.rt)
+        except Exception as e:
+            ctx.log(f"[MOUSE] kroužek circle click nejde zobrazit: {e}")
+
+    def stop(self):
+        self.rt.enabled = False
+        self.engine.buttons.abort()
+        self.rt.running = False
+
+    @property
+    def on(self) -> bool:
+        return self.rt.enabled
+
+    def set_on(self, on: bool):
+        if on != self.rt.enabled:
+            self.engine.buttons.abort()
+            self.rt.enabled = on
+
+    # ----------------------------------------------------------------- události
+    def on_mode(self, prev, mode):
+        if mode == "BAG":
+            if prev == "DESK":
+                self.user_wants = self.rt.enabled
+            self.set_on(True)
+        elif mode == "DESK":
+            self.set_on(self.user_wants)
+        else:
+            self.set_on(False)
+
+    def on_imu(self, s):
+        if not self.paused:
+            self.engine.process(s)
+
+    def on_button(self, down, t):
+        if self.paused or not self.rt.enabled:
+            return
+        now = time.time()
+        (self.engine.buttons.down if down else self.engine.buttons.up)(now)
+
+    def on_focus(self, root_has_focus):
+        self.paused = root_has_focus
+        if root_has_focus:
+            self.engine.buttons.abort()
+            self.engine.dwell.reset()
+
+    def tick(self, now):
+        self.engine.buttons.tick(time.time())
+        if now - self._t_mon > 2.0:
+            self._t_mon = now
+            self.engine.refresh_monitor()
+        if self.ring:
+            self.ring.tick()
+
+    def status(self):
+        if not self.rt.enabled:
+            return "vypnutá"
+        return "zapnutá" + (" (pozastavená)" if self.paused else "")
+
+    def menu_items(self):
+        r = self.rt
+        return [
+            MenuItem("mouse_toggle", "Vypnout myš hlavou" if r.enabled else "Zapnout myš hlavou",
+                     action=lambda: self.set_on(not self.rt.enabled)),
+            MenuItem("mouse_recenter", "Vycentrovat kurzor", "střed = kam se díváš",
+                     action=self._recenter),
+            MenuItem("mouse_dwell", ("Vypnout" if self.mcfg.dwell_on else "Zapnout") + " klik pohledem",
+                     action=self._toggle_dwell),
+        ]
+
+    def recalibrate(self):
+        self.rt.calib_request = True
+
+    def _recenter(self):
+        self.rt.recenter_request = True
+        c = self.engine.center()
+        if c and self.rt.enabled and not self.ctx.dry:
+            self.engine.io.set_cursor(*c)
+
+    def _toggle_dwell(self):
+        self.mcfg.dwell_on = not self.mcfg.dwell_on
+        self.mcfg.save()
+
+
+MODULE = HeadMouse

@@ -44,6 +44,7 @@ Later: support for custom hardware sensors and modules (ESP32, IMU, radar) conne
 
 | Folder | Contents | Status |
 |---|---|---|
+| [`xreal-root/`](xreal-root/) | **XREAL Root (Kořen)**: always-on tray app. Lid + glasses → "laptop in the bag" mode, countdown and hibernation, head-only menu and help overlay, module system, supervisor. Design (Czech): [`ARCHITEKTURA.md`](xreal-root/ARCHITEKTURA.md). | first version |
 | [`xreal-eye-rgb/`](xreal-eye-rgb/) | **XREAL Eye camera as a Windows webcam** (RGB 1920×1080 up to 60 fps + grey SLAM camera) by enabling USB functions over the glasses' HID channel. MIT. | working, verified |
 | [`ariel/`](ariel/) | **Ariel Core**: the current modular server (IMU, camera, YOLO, OCR, AR calibration, head mouse, HTTP + WebSocket, tablet and HUD pages, vision check, encrypted faces module). | main line |
 | [`xreal-web/`](xreal-web/) | The original monolithic server (`server.py`) Ariel grew out of. | archive |
