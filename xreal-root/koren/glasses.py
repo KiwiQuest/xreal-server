@@ -130,6 +130,8 @@ class GlassesLink:
                 time.sleep(2.0)
 
     def _sample(self, s):
+        if not self.streams.is_set():           # režim Tray: dočtený zbytek už nezpracovávat
+            return
         if self._recal:
             self._recal = False
             self.ori.start_calibration()
