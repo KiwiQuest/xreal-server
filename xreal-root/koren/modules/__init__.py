@@ -64,6 +64,18 @@ class Module:
         """Položky (menu.MenuItem) do kořenového menu."""
         return []
 
+    def home_tiles(self) -> list:
+        """Dlaždice (modules.home.Tile) do prostorového Domova v brýlích."""
+        return []
+
+    def captures_input(self) -> bool:
+        """True = modul teď chce tlačítko a gesta jen pro sebe (např. otevřený Domov).
+        Ostatní moduly dostanou on_focus(True), podržení tlačítka (menu) zůstává kořeni."""
+        return False
+
+    def on_press(self, t: float):
+        """Krátký stisk tlačítka brýlí, když modul drží vstup (captures_input)."""
+
 
 class ModuleContext:
     """Co kořen modulu půjčuje: vrstvy overlay, hlášky, nastavení, stav."""
@@ -100,6 +112,18 @@ class ModuleContext:
 
     def monitor(self):
         return self._app.glasses_monitor()
+
+    def head(self):
+        """(yaw°, pitch°) hlavy: yaw + = doprava (integrovaný z gyra, jde vycentrovat),
+        pitch + = nahoru (z gravitace, neujíždí). None = brýle neposílají pohyb."""
+        return self._app.glasses.head()
+
+    def ask(self, question: str, on_yes=None, on_no=None):
+        self._app.ask(question, on_yes=on_yes, on_no=on_no)
+
+    def app(self):
+        """Přístup ke kořeni pro vestavěné moduly (nastavení, hibernace, režimy)."""
+        return self._app
 
 
 class ModuleManager:
@@ -164,13 +188,26 @@ class ModuleManager:
         return m if m and m.active else None
 
     def menu_items(self) -> list:
+        return self._collect("menu_items")
+
+    def home_tiles(self) -> list:
+        return self._collect("home_tiles")
+
+    def _collect(self, name: str) -> list:
         items = []
         for mod in list(self.mods.values()):
             if mod.active:
-                r = self.call(mod, "menu_items")
+                r = self.call(mod, name)
                 if isinstance(r, list):
                     items.extend(r)
         return items
+
+    def capturing(self):
+        """Modul, který teď drží vstup, nebo None."""
+        for mod in list(self.mods.values()):
+            if mod.active and self.call(mod, "captures_input") is True:
+                return mod
+        return None
 
 
 class _Fail:

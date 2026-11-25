@@ -46,6 +46,17 @@ jsou brýle, a poprvé otevře okno nastavení, kde ho jedním klikem potvrdíš
 cesta zařízení, kód EDID a jméno, takže se brýle najdou i jako třetí monitor nebo na jiném portu.
 Displej notebooku zhasne (režim 3) až po potvrzení, ať se omylem nevypne obyčejný monitor.
 
+## Domov: prostředí v brýlích
+
+Po zavření víka (a kdykoliv z menu) se v brýlích otevře **Domov**: dlaždice visí v prostoru kolem tebe,
+otočením hlavy se mezi nimi rozhlížíš a uprostřed pohledu je zaměřovač. Dlaždici vybereš pohledem
+(podržet 1,6 s, kroužek se naplní) nebo krátkým stiskem tlačítka brýlí. Pozadí je černé, takže v brýlích
+je průhledné a Domov visí ve skutečném prostoru. Když se ztratí z dohledu, sám se po 3 s vrátí před tebe.
+
+Dlaždice teď: Windows (zavře Domov, zapne myš hlavou), klávesnice na obrazovce, prohlížeč, kamera Eye,
+Průzkumník, vycentrovat, nastavení, režim Tray, hibernace (s potvrzením). Další moduly přidávají vlastní
+dlaždice přes `home_tiles()`. Zpět do Domova: podržet tlačítko brýlí → menu → „Domov“.
+
 ## Jak se chová víko
 
 | Situace | Co kořen udělá |
@@ -77,6 +88,6 @@ V systray (pravé tlačítko): stav, ruční **Režim bez rukou** (stolní PC, J
 | `koren/overlay.py` | průhledné vrstvy přes brýle |
 | `koren/glasses.py` | jediné spojení s brýlemi (IMU, tlačítko, přítomnost na USB) |
 | `koren/win.py` | systray, víko, hibernace, USB, fyzický vstup (ctypes) |
-| `koren/modules/` | moduly: `head_mouse`, `clock`, `voice` |
+| `koren/modules/` | moduly: `home` (Domov v brýlích), `head_mouse`, `clock`, `voice` |
 | `tests/` | testy čisté logiky |
 | `koren_config.json`, `logs/` | vznikají za běhu, nejsou v gitu |

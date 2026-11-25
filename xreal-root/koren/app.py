@@ -27,7 +27,7 @@ from .settings import SettingsWindow
 from .states import BAG, DESK, MODE_LABELS, SUSPEND, WAITING, Machine
 
 TICK_MS = 30          # první tik; dál podle režimu (profiles.Plan.tick_ms)
-ALL_MODULES = ("head_mouse", "clock", "voice")
+ALL_MODULES = ("home", "head_mouse", "clock", "voice")
 TRAY_ICON = {DESK: "desk", BAG: "bag", WAITING: "wait", SUSPEND: "wait"}
 BEEPS = {"bag": ((880, 110), (1320, 150)), "wait": ((660, 220),), "warn": ((520, 140), (520, 140)),
          "lost": ((440, 260),)}
@@ -89,6 +89,7 @@ class App:
         self._asked_display = False         # okno s potvrzením monitoru už bylo nabídnuto
         self._focus = False
         self._t_input = 0.0                 # poslední tlačítko / gesto (monotonic)
+        self._capture = None                # modul, který drží vstup (Domov)
         self.profile_eff = profiles.TRAY
         self.plan = profiles.plan(profiles.TRAY, DESK)
         self._plan_key = None
@@ -248,10 +249,13 @@ class App:
                     self.mods.each("on_button", True, t)
             else:
                 r = self.btn.up(now)
-                if self._focus:
+                if self.menu is not None or self.prompt is not None:
                     if r == "press":
                         self._confirm_press(now)
-                else:
+                elif self._capture is not None:
+                    if r == "press":
+                        self.mods.call(self._capture, "on_press", t)
+                elif not self._focus:
                     self.mods.each("on_button", False, t)
         elif kind == "tray":
             self._tray_cmd(ev[1])
@@ -279,6 +283,9 @@ class App:
             return
         if g == SHAKE:
             self.struggle.note(now, "shake")
+        if self._capture is not None:
+            self.mods.call(self._capture, "on_gesture", g)
+            return
         self.mods.each("on_gesture", g)
 
     def _confirm_press(self, now: float):
@@ -355,7 +362,8 @@ class App:
 
     # ================================================================ menu / otázky
     def _focus_update(self):
-        f = self.menu is not None or self.prompt is not None
+        self._capture = self.mods.capturing()
+        f = self.menu is not None or self.prompt is not None or self._capture is not None
         if f != self._focus:
             self._focus = f
             self.mods.each("on_focus", f)
@@ -610,6 +618,8 @@ class App:
         c = capabilities(s, self.cfg.physical_input_fresh_s)
         st = self.struggle.level(now)
         g = guidance(s, c, st, self.machine.wait_s)
+        if self._capture is not None and self.menu is None and self.prompt is None and g.tone != "warn":
+            g.show = False                         # modul (Domov) má celý displej, nápověda by překážela
         extra = ["ZKUŠEBNÍ REŽIM (--dry): myš se nehýbe a notebook nehibernuje."] if self.cfg.dry_run else []
         self.overlay.render(g, self.menu, self.prompt, st, self.btn.held_for(now), self.cfg.menu_hold_s,
                             extra, max(self.glasses.t_motion, self._t_input))

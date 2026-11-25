@@ -110,6 +110,11 @@ Modul = třída odvozená od `Module` + `MODULE = Třída`. Dostává:
 řadí podle `z`, kořen je vždy nahoře (z = 1000). Tím může běžet víc modulů nad sebou.
 Výjimka v modulu se zaloguje, po 3 chybách se modul vypne a rádce to oznámí; kořen běží dál.
 
+**Domov (`home`)** je kořenové prostředí v brýlích: dlaždice ukotvené v prostoru podle IMU (yaw z gyra,
+pitch z gravitace), výběr zaměřovačem uprostřed pohledu. Když je otevřený, drží vstup (`captures_input`):
+krátký stisk tlačítka a gesta jdou jemu, myš hlavou se pozastaví, podržení tlačítka (menu) zůstává kořeni.
+Moduly do něj přidávají dlaždice přes `home_tiles()`.
+
 **Hotové moduly v tomto kroku:** `head_mouse` (engine Head Mouse 2.0 krmený daty z kořene),
 `clock` (čas a baterie v rohu, ukázka vrstvy), `voice` (kořen mluví přes Windows hlas, vypnutý).
 

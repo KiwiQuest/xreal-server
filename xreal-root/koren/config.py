@@ -43,6 +43,7 @@ class Config:
     sound_on: bool = True
     # --- moduly ---
     modules: dict = field(default_factory=lambda: {
+        "home": True,
         "head_mouse": True,
         "clock": True,
         "voice": False,

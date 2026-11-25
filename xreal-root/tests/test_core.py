@@ -342,5 +342,22 @@ class DisplaysTest(unittest.TestCase):
         self.assertEqual(dsp._edid_code(0x4736, 0x4100), "MRG4100")
 
 
+from koren.modules.home import hit, layout  # noqa: E402
+
+
+class HomeLayoutTest(unittest.TestCase):
+    def test_layout_rows_centered(self):
+        pos = layout(7, 5, 20.0)
+        self.assertEqual([round(p[0]) for p in pos[:5]], [-40, -20, 0, 20, 40])
+        self.assertEqual([round(p[0]) for p in pos[5:]], [-10, 10])
+        self.assertGreater(pos[0][1], pos[5][1])          # druhá řada je níž
+
+    def test_gaze_hits_tile(self):
+        pos = layout(5, 5, 20.0)
+        self.assertEqual(hit(pos, 16, 12, 0.0, pos[0][1]), 2)
+        self.assertEqual(hit(pos, 16, 12, 21.0, pos[0][1]), 3)
+        self.assertEqual(hit(pos, 16, 12, 10.0, pos[0][1]), -1)   # mezera mezi dlaždicemi
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -33,6 +33,7 @@ class GlassesLink:
         self.present = False
         self.imu_t = 0.0                          # monotonic posledního platného vzorku
         self.t_motion = 0.0                       # monotonic posledního výraznějšího pohybu hlavy
+        self.yaw_deg = 0.0                        # natočení hlavy do stran (integrované gyro, + = doprava)
         self.btn_connected = False
         self.imu_status = "nepřipojeno"
         self._absent_since: Optional[float] = None
@@ -52,6 +53,11 @@ class GlassesLink:
     @property
     def pitch_deg(self) -> Optional[float]:
         return None if (not self.imu_alive or self.ori.calibrating) else self.ori.pitch_deg
+
+    def head(self):
+        """(yaw°, pitch°) nebo None, když brýle neposílají pohyb / kalibrují."""
+        p = self.pitch_deg
+        return None if p is None else (self.yaw_deg, p)
 
     def recalibrate(self):
         self._recal = True
@@ -139,6 +145,7 @@ class GlassesLink:
         valid = self.ori.update(s.ts_ns, s.gyro, s.acc)
         self.imu_t = time.monotonic()
         if valid:
+            self.yaw_deg -= self.ori.yaw_rate_dps * self.ori.dt      # fusion: + = doleva
             if abs(self.ori.yaw_rate_dps) > 25 or abs(self.ori.pitch_rate_dps) > 25:
                 self.t_motion = self.imu_t            # uživatel hýbe hlavou (brýle jsou na hlavě)
             g = self.gestures.feed(s.ts_ns * 1e-9, self.ori.yaw_rate_dps, self.ori.pitch_rate_dps)
