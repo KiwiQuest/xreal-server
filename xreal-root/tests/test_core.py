@@ -309,5 +309,38 @@ class ProfilesTest(unittest.TestCase):
                 self.assertFalse(p.gui or p.laptop_screen_off)
 
 
+from koren import displays as dsp  # noqa: E402
+
+
+class DisplaysTest(unittest.TestCase):
+    LAPTOP = {"gdi": "D2", "name": "", "edid": "LEN8AD6", "path": "P-LEN", "internal": True, "primary": True}
+    XREAL = {"gdi": "D1", "name": "XREAL One Pro", "edid": "MRG4100", "path": "P-MRG", "primary": False}
+    OTHER = {"gdi": "D3", "name": "Smart Glasses X", "edid": "ABC0001", "path": "P-ABC", "primary": False}
+
+    def test_guess_by_name_is_not_confirmed(self):
+        d, ok = dsp.find_glasses([self.LAPTOP, self.XREAL], None)
+        self.assertEqual(d["gdi"], "D1")
+        self.assertFalse(ok)
+
+    def test_saved_choice_wins_regardless_of_order_and_name(self):
+        saved = dsp.remember(self.OTHER)
+        d, ok = dsp.find_glasses([self.XREAL, self.LAPTOP, self.OTHER], saved)
+        self.assertEqual(d["gdi"], "D3")
+        self.assertTrue(ok)
+
+    def test_saved_matches_by_edid_on_other_port(self):
+        saved = dsp.remember(self.XREAL)
+        moved = dict(self.XREAL, path="P-MRG-OTHER-PORT", gdi="D5")
+        d, ok = dsp.find_glasses([self.LAPTOP, moved], saved)
+        self.assertEqual(d["gdi"], "D5")
+        self.assertTrue(ok)
+
+    def test_nothing_found(self):
+        self.assertEqual(dsp.find_glasses([self.LAPTOP], None), (None, False))
+
+    def test_edid_code(self):
+        self.assertEqual(dsp._edid_code(0x4736, 0x4100), "MRG4100")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -293,24 +293,3 @@ class _Flow:
             dy = center_y - (self.top + h / 2)
         if dy:
             self.cv.move(self.tag, 0, dy)
-
-
-def pick_display(lid: Optional[str]) -> Optional[dict]:
-    """Monitor pro overlay: brýle (EDID MRG/XREAL), jinak první neprimární, jinak hlavní."""
-    try:
-        mons = winapi.list_monitors()
-    except Exception:
-        mons = []
-    if not mons:
-        return None
-    for m in mons:
-        if m.get("xreal"):
-            return m
-    return winapi.pick_monitor(mons, -1)
-
-
-def glasses_display_present() -> bool:
-    try:
-        return any(m.get("xreal") for m in winapi.list_monitors())
-    except Exception:
-        return False

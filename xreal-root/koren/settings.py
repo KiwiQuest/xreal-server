@@ -37,6 +37,8 @@ class SettingsWindow:
             y = monitor["y"] + max(0, (monitor["h"] - h) // 2)
             self.win.geometry(f"+{x}+{y}")
         self.win.lift()
+        self.win.attributes("-topmost", True)            # vynořit nad ostatní okna, pak normálně
+        self.win.after(1500, lambda: self.win.winfo_exists() and self.win.attributes("-topmost", False))
         self.refresh()
 
     def hide(self):
@@ -50,8 +52,14 @@ class SettingsWindow:
         w.title("XREAL Kořen: nastavení")
         w.protocol("WM_DELETE_WINDOW", self.hide)
         pad = {"padx": 10, "pady": 4}
+        # dvě záložky, ať se okno vejde i na displej brýlí 1280×720
+        self.nb = ttk.Notebook(w)
+        self.nb.pack(fill="both", expand=True, padx=6, pady=(6, 0))
+        t1, t2 = ttk.Frame(self.nb), ttk.Frame(self.nb)
+        self.nb.add(t1, text="Stav a monitor brýlí")
+        self.nb.add(t2, text="Režim a nastavení")
 
-        st = ttk.LabelFrame(w, text="Stav")
+        st = ttk.LabelFrame(t1, text="Stav")
         st.pack(fill="x", **pad)
         for key, title in (("mode", "Režim"), ("profile", "Provozní režim"), ("lid", "Víko"),
                            ("glasses", "Brýle"), ("display", "Displej brýlí"), ("input", "Ovládání"),
@@ -63,7 +71,22 @@ class SettingsWindow:
             lab.pack(side="left", fill="x")
             self.labels[key] = lab
 
-        pf = ttk.LabelFrame(w, text="Provozní režim (Ctrl+Alt+T = kdykoliv Tray)")
+        df = self.disp_frame = ttk.LabelFrame(t1, text="Monitor brýlí")
+        df.pack(fill="x", **pad)
+        ttk.Label(df, text="Vyber monitor, který jsou brýle, a potvrď. Uloží se podle jména a zařízení,\n"
+                           "ne podle pořadí, takže ho kořen najde i jako třetí monitor nebo na jiném portu.",
+                  foreground="#666", justify="left").pack(anchor="w", padx=8, pady=(2, 4))
+        r = ttk.Frame(df)
+        r.pack(fill="x", padx=8, pady=2)
+        self.vars["disp"] = tk.StringVar()
+        self.disp_box = ttk.Combobox(r, textvariable=self.vars["disp"], state="readonly", width=46)
+        self.disp_box.pack(side="left", fill="x", expand=True)
+        ttk.Button(r, text="Toto jsou brýle", command=self._confirm_display).pack(side="left", padx=6)
+        self.disp_state = ttk.Label(df, text="")
+        self.disp_state.pack(anchor="w", padx=8, pady=(2, 4))
+        self._disp_list = []
+
+        pf = ttk.LabelFrame(t2, text="Provozní režim (Ctrl+Alt+T = kdykoliv Tray)")
         pf.pack(fill="x", **pad)
         self.vars["profile"] = tk.StringVar()
         for p in profiles.PROFILES:
@@ -72,7 +95,7 @@ class SettingsWindow:
         ttk.Label(pf, text="Zavřené víko přebije cokoliv: notebook v tašce, ovládání hlavou.",
                   foreground="#666").pack(anchor="w", padx=8, pady=(2, 4))
 
-        sf = ttk.LabelFrame(w, text="Nastavení")
+        sf = ttk.LabelFrame(t2, text="Nastavení")
         sf.pack(fill="x", **pad)
         self.vars["wait"] = tk.DoubleVar()
         self.vars["hold"] = tk.DoubleVar()
@@ -88,7 +111,7 @@ class SettingsWindow:
                           ("autostart", "Spouštět s Windows")):
             self.vars[key] = tk.BooleanVar()
             ttk.Checkbutton(sf, text=text, variable=self.vars[key]).pack(anchor="w", padx=8)
-        mf = ttk.LabelFrame(w, text="Moduly (běží jen v režimu Vše v brýlích a se zavřeným víkem)")
+        mf = ttk.LabelFrame(t2, text="Moduly (běží jen v režimu Vše v brýlích a se zavřeným víkem)")
         mf.pack(fill="x", **pad)
         for mid, mod in app.mods.mods.items():
             self.vars["mod_" + mid] = tk.BooleanVar()
@@ -113,6 +136,39 @@ class SettingsWindow:
         self.vars["autostart"].set(c.autostart)
         for mid in self.app.mods.mods:
             self.vars["mod_" + mid].set(bool(c.modules.get(mid, False)))
+
+    # ----------------------------------------------------------------- monitor brýlí
+    def _fill_displays(self):
+        app = self.app
+        cur = [d.get("gdi") for d in self._disp_list]
+        new = [d.get("gdi") for d in app.displays]
+        if cur != new or not self.disp_box["values"]:
+            self._disp_list = list(app.displays)
+            self.disp_box["values"] = [d["label"] for d in self._disp_list]
+            if app.gdisp:
+                self.vars["disp"].set(app.gdisp["label"])
+        if app.gdisp is None:
+            txt = "Brýle mezi monitory nevidím. Vyber je ručně, nebo zkontroluj, že je Windows používají."
+        elif app.gconfirmed:
+            txt = f"Potvrzeno: {app.gdisp['label']}"
+        else:
+            txt = f"Odhad podle jména: {app.gdisp['label']}  →  potvrď prosím"
+        self.disp_state.config(text=txt, foreground="#2a7a3a" if app.gconfirmed else "#b06a00")
+
+    def _confirm_display(self):
+        lab = self.vars["disp"].get()
+        for d in self._disp_list:
+            if d["label"] == lab:
+                self.app.confirm_glasses_display(d)
+                self._fill_displays()
+                return
+
+    def focus_display(self):
+        """Otevřeno kvůli nepotvrzenému monitoru: zvýraznit výběr."""
+        if self.win is not None:
+            self.nb.select(0)
+            self._fill_displays()
+            self.disp_box.focus_set()
 
     # ----------------------------------------------------------------- akce
     def _profile_changed(self):
@@ -163,7 +219,9 @@ class SettingsWindow:
         else:
             g.append("spojení vypnuté (šetří výkon)")
         L["glasses"].config(text=", ".join(g))
-        L["display"].config(text="aktivní" if s.glasses_display else "Windows na brýlích nic nezobrazuje")
+        L["display"].config(text=(app.gdisp["label"] + ("" if app.gconfirmed else "  (odhad, potvrď níže)"))
+                            if app.gdisp else "nenalezen")
+        self._fill_displays()
         age = s.physical_input_age
         hm = app.mods.get("head_mouse")
         L["input"].config(text=(f"klávesnice/myš použity před {age:.0f} s" if age is not None

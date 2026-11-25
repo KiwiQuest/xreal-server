@@ -25,6 +25,7 @@ class Snapshot:
     imu_calibrating: bool = False
     button_alive: bool = False
     glasses_display: bool = False        # monitor brýlí je ve Windows aktivní
+    glasses_confirmed: bool = True       # uživatel monitor brýlí potvrdil (False = jen odhad)
     physical_input_age: Optional[float] = None   # s od posledního fyzického vstupu (ne SendInput)
     lid_action_ok: Optional[bool] = None  # Windows: akce víka = "nedělat nic"
     remaining: Optional[float] = None     # WAITING: zbývající čas
@@ -159,6 +160,8 @@ def config_warnings(s: Snapshot) -> List[str]:
     w = []
     if s.lid_action_ok is False:
         w.append("Ve Windows není u zavření víka nastaveno „Nedělat nic“, režim v tašce se nespustí.")
+    if s.glasses_usb and not s.glasses_confirmed and s.mode != SUSPEND:
+        w.append("Monitor brýlí není potvrzený, potvrď ho v nastavení (systray).")
     if s.mode == BAG and s.glasses_usb and not s.glasses_display:
         w.append("Brýle jsou připojené, ale Windows na nich nic nezobrazuje.")
     for m in s.modules_failed:

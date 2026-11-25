@@ -39,6 +39,13 @@ nejsou → Tray**. Režim jde kdykoliv změnit v systray nebo v okně nastavení
 V režimech 1-3 se ovládání hlavou samo **nezapíná**, ale jde kdykoliv zapnout ručně (systray, okno nastavení,
 menu v brýlích); v Tray režimu se kvůli tomu spustí jen myš hlavou a spojení s brýlemi.
 
+### Monitor brýlí
+
+Kořen nespoléhá na pořadí monitorů ani na název XREAL. Podle jména z Windows jen odhadne, který monitor
+jsou brýle, a poprvé otevře okno nastavení, kde ho jedním klikem potvrdíš („Toto jsou brýle“). Uloží se
+cesta zařízení, kód EDID a jméno, takže se brýle najdou i jako třetí monitor nebo na jiném portu.
+Displej notebooku zhasne (režim 3) až po potvrzení, ať se omylem nevypne obyčejný monitor.
+
 ## Jak se chová víko
 
 | Situace | Co kořen udělá |
@@ -64,6 +71,7 @@ V systray (pravé tlačítko): stav, ruční **Režim bez rukou** (stolní PC, J
 | `koren/states.py` | stavový automat DESK / BAG / WAITING / SUSPEND |
 | `koren/profiles.py` | provozní režimy Tray / GUI na monitoru / Vše v brýlích: co v nich běží |
 | `koren/settings.py` | okno nastavení a stavu |
+| `koren/displays.py` | monitory podle jména a EDID, odhad a potvrzení monitoru brýlí |
 | `koren/advisor.py` | rádce: jaké ovládání má uživatel, co mu ukázat, poznání potíží |
 | `koren/gestures.py`, `koren/menu.py` | kývnutí, zavrtění, podržení tlačítka, menu ovládané hlavou |
 | `koren/overlay.py` | průhledné vrstvy přes brýle |

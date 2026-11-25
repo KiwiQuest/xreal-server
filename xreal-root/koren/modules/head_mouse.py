@@ -34,7 +34,7 @@ class HeadMouse(Module):
         self.mcfg = MouseConfig().load()
         self.rt = Runtime()
         self.engine = Engine(self.mcfg, self.rt, io=NullOutput() if ctx.dry else WinOutput(),
-                             use_hotkeys=False)
+                             use_hotkeys=False, monitor_fn=ctx.monitor)   # monitor brýlí určuje kořen
         self.engine.refresh_monitor()
         self.paused = False
         self.user_wants = False          # stav u stolu (zapnul si ji uživatel sám?)

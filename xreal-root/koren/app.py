@@ -21,7 +21,8 @@ from .gestures import NOD, SHAKE, ButtonTracker
 from .glasses import GlassesLink
 from .menu import Menu, MenuItem, Prompt
 from .modules import _FAIL, Module, ModuleContext, ModuleManager
-from .overlay import Overlay, glasses_display_present, pick_display
+from . import displays
+from .overlay import Overlay
 from .settings import SettingsWindow
 from .states import BAG, DESK, MODE_LABELS, SUSPEND, WAITING, Machine
 
@@ -82,7 +83,10 @@ class App:
         self.running = True
         self._t = time.monotonic()
         self._t_hb = self._t_disp = self._t_slow = 0.0
-        self._glasses_display = False
+        self.displays = []                  # aktivní monitory se jménem (displays.py)
+        self.gdisp = None                   # monitor brýlí (potvrzený nebo odhad)
+        self.gconfirmed = False
+        self._asked_display = False         # okno s potvrzením monitoru už bylo nabídnuto
         self._focus = False
         self.profile_eff = profiles.TRAY
         self.plan = profiles.plan(profiles.TRAY, DESK)
@@ -103,7 +107,7 @@ class App:
         self.mods.load(ALL_MODULES)            # načíst; spustí je až plán podle režimu
         self.glasses.sinks.append(self._imu_to_modules)
         self.glasses.start()
-        self.overlay.set_monitor(pick_display(None))
+        self._refresh_displays()
         if not self.cfg.dry_run:
             self._sync_autostart()
         self._sync_plan(time.monotonic())
@@ -203,8 +207,7 @@ class App:
 
         if now - self._t_disp > 3.0:
             self._t_disp = now
-            self._glasses_display = glasses_display_present()
-            self.overlay.set_monitor(pick_display(self.machine.facts.lid))
+            self._refresh_displays()
         if now - self._t_slow > 30.0:
             self._t_slow = now
             self.lid_action = win.lid_action()
@@ -504,30 +507,58 @@ class App:
         self._laptop_screen(pl.laptop_screen_off)
 
     def _second_monitor(self):
-        """Druhý monitor pro okno nastavení: brýle nebo jiný než hlavní, jinak hlavní."""
-        try:
-            from xreal import winapi
-            mons = winapi.list_monitors()
-        except Exception:
-            return None
-        for m in mons:
-            if m.get("xreal") and not m.get("primary"):
-                return m
-        for m in mons:
+        """Druhý monitor pro okno nastavení: brýle, jinak jiný než hlavní, jinak hlavní."""
+        if self.gdisp:
+            return self.gdisp
+        for m in self.displays:
             if not m.get("primary"):
                 return m
-        return mons[0] if mons else None
+        return self.displays[0] if self.displays else None
+
+    # ============================================================ monitor brýlí
+    def _refresh_displays(self):
+        """Najde monitor brýlí podle uloženého výběru uživatele (ne podle pořadí ani názvu XREAL)."""
+        try:
+            self.displays = displays.list_displays()
+        except Exception as e:
+            self.log(f"[DISP] {type(e).__name__}: {e}")
+            self.displays = []
+        g, ok = displays.find_glasses(self.displays, self.cfg.glasses_display)
+        if (g or {}).get("gdi") != (self.gdisp or {}).get("gdi") or ok != self.gconfirmed:
+            self.log(f"[DISP] brýle: {g['label'] if g else 'nenalezeny'} ({'potvrzeno' if ok else 'odhad'})")
+        if ok != self.gconfirmed:
+            self._plan_key = None                       # po potvrzení znovu zkusit zhasnout notebook
+        self.gdisp, self.gconfirmed = g, ok
+        self.overlay.set_monitor(g or self._fallback_display())
+        # nepotvrzený monitor: jednou nabídnout potvrzení, ale jen když má uživatel ruce (víko otevřené)
+        need = not ok and self.glasses.usb and len(self.displays) > 0
+        if need and not self._asked_display and self.machine.mode == DESK and self.machine.facts.lid != "closed":
+            self._asked_display = True
+            self.settings.show(monitor=g or self._fallback_display())
+            self.settings.focus_display()
+
+    def _fallback_display(self):
+        """Bez potvrzených brýlí: jiný než vestavěný displej, jinak hlavní."""
+        for m in self.displays:
+            if not m.get("internal") and not m.get("primary"):
+                return m
+        for m in self.displays:
+            if m.get("primary"):
+                return m
+        return self.displays[0] if self.displays else None
+
+    def confirm_glasses_display(self, d: dict):
+        self.cfg.glasses_display = displays.remember(d)
+        self.cfg.save()
+        self.log(f"[DISP] uživatel potvrdil brýle: {d.get('label')}")
+        self._refresh_displays()
+        self.overlay_toast("Monitor brýlí uložen", 2.0)
 
     def _laptop_screen(self, off: bool):
         """Režim 3: displej notebooku zhasnout (jako Win+P „Jen druhá obrazovka“), pak vrátit."""
         if off and not self._screen_off:
-            try:
-                from xreal import winapi
-                mons = winapi.list_monitors()
-            except Exception:
-                mons = []
-            if len(mons) < 2 or not any(m.get("xreal") for m in mons):
-                return                                  # notebook už nic neukazuje, nebo brýle chybí
+            if len(self.displays) < 2 or self.gdisp is None or not self.gconfirmed:
+                return      # notebook už nic neukazuje, brýle chybí, nebo monitor brýlí není potvrzený
             topo = win.display_topology() or win.TOPO_EXTEND
             self._screen_off = True
             if self.cfg.dry_run:
@@ -560,7 +591,8 @@ class App:
         return Snapshot(
             mode=m.mode, lid=m.facts.lid, glasses_usb=self.glasses.usb, imu_alive=self.glasses.imu_alive,
             imu_calibrating=self.glasses.calibrating, button_alive=self.glasses.btn_connected,
-            glasses_display=self._glasses_display, physical_input_age=self.native.physical_input_age(),
+            glasses_display=self.gdisp is not None, glasses_confirmed=self.gconfirmed,
+            physical_input_age=self.native.physical_input_age(),
             lid_action_ok=lid_ok, remaining=m.remaining, glasses_lost=m.lost_since is not None,
             menu_open=self.menu is not None, prompt=self.prompt.question if self.prompt else None,
             head_mouse_on=bool(hm and hm.on), modules_failed=tuple(self.mods.failed))
@@ -593,6 +625,8 @@ class App:
     def tray_menu(self):
         """Volá se z vlákna okna: jen číst stav, nic neměnit."""
         e = [(1, self._status_line()[:120], 1)]
+        if self.glasses.usb and not self.gconfirmed:
+            e.append((12, "Potvrď monitor brýlí v nastavení…", 0))
         if self.lid_action and self.power["lid"] and any(v != 0 for v in self.lid_action.values()):
             e.append((2, "Pozor: zavření víka není „Nedělat nic“", 1))
         e.append((0, "", -1))
