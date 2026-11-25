@@ -32,6 +32,7 @@ class GlassesLink:
         self.usb = False
         self.present = False
         self.imu_t = 0.0                          # monotonic posledního platného vzorku
+        self.t_motion = 0.0                       # monotonic posledního výraznějšího pohybu hlavy
         self.btn_connected = False
         self.imu_status = "nepřipojeno"
         self._absent_since: Optional[float] = None
@@ -138,6 +139,8 @@ class GlassesLink:
         valid = self.ori.update(s.ts_ns, s.gyro, s.acc)
         self.imu_t = time.monotonic()
         if valid:
+            if abs(self.ori.yaw_rate_dps) > 25 or abs(self.ori.pitch_rate_dps) > 25:
+                self.t_motion = self.imu_t            # uživatel hýbe hlavou (brýle jsou na hlavě)
             g = self.gestures.feed(s.ts_ns * 1e-9, self.ori.yaw_rate_dps, self.ori.pitch_rate_dps)
             if g:
                 self.post(("gesture", g))

@@ -125,14 +125,18 @@ class Overlay:
 
     # ------------------------------------------------------------ kořenový panel
     def render(self, g, menu=None, prompt=None, struggle: int = 0, hold: float = 0.0,
-               hold_total: float = 2.0, extra_lines: List[str] = ()):
-        """g = advisor.Guidance. Volá se ~20x za sekundu, kreslí jen při změně."""
+               hold_total: float = 2.0, extra_lines: List[str] = (), interacted_at: float = 0.0):
+        """g = advisor.Guidance. Volá se ~30x za sekundu, kreslí jen při změně.
+        interacted_at = kdy uživatel naposledy hnul hlavou / stiskl tlačítko (monotonic)."""
         now = time.monotonic()
         key = (g.title, g.text, tuple(g.options), g.tone, bool(menu), bool(prompt), struggle)
         if key != self._last_key:
             self._last_key, self.t_change = key, now
+        # panel se stáhne až chvíli poté, co uživatel po změně stavu něco udělal (nasadil brýle,
+        # pohnul hlavou); dokud brýle leží v tašce nebo na stole, zůstane celý, ať ho nepropásne
+        seen = interacted_at > self.t_change + 0.5
         expanded = (menu is not None or prompt is not None or struggle >= 1 or g.tone == "warn"
-                    or now - self.t_change < self.cfg.hint_seconds)
+                    or not seen or now - interacted_at < self.cfg.hint_seconds)
         toast = self._toast[0] if now < self._toast[1] else ""
         visible = g.show or menu is not None or prompt is not None or bool(toast) or hold > 0
         L = self.help
@@ -152,7 +156,8 @@ class Overlay:
 
     def _paint(self, cv, W, H, g, expanded, menu, prompt, toast, hold, extra):
         s = self.cfg.overlay_scale * max(0.6, min(1.6, H / 1080.0))
-        f = lambda n, b=False: (FONT, int(n * s), "bold" if b else "normal")
+        # záporná velikost = pixely: stejná velikost při jakémkoli DPI a měřítku Windows
+        f = lambda n, b=False: (FONT, -max(8, int(n * s * 1.33)), "bold" if b else "normal")
         title_c = C_TITLE.get(g.tone, C_TITLE["calm"])
         cx = W // 2
         pad = int(26 * s)

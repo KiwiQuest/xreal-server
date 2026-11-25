@@ -45,7 +45,7 @@ class Clock(Module):
         txt = t if b is None else f"{t}    {b[0]} %{' ⚡' if b[1] else ''}"
         low = b is not None and b[0] <= 15 and not b[1]
         self.L.draw((self.L.rect, txt, low), lambda cv: cv.create_text(
-            self.L.W - 40, 34, text=txt, anchor="e", font=("Segoe UI", 16),
+            self.L.W - 40, 34, text=txt, anchor="e", font=("Segoe UI", -22),
             fill="#ffcf6b" if low else "#6d8ea3"))
 
     def status(self):

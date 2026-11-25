@@ -74,7 +74,9 @@ class Config:
         try:
             tmp = path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(asdict(self), f, indent=2, ensure_ascii=False)
+                d = asdict(self)
+                d.update(getattr(self, "cli_saved", {}))   # přepínače z příkazové řádky (--dry) neukládat
+                json.dump(d, f, indent=2, ensure_ascii=False)
             os.replace(tmp, path)                 # atomicky: rozpracovaný zápis nerozbije nastavení
         except OSError:
             pass

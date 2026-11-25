@@ -181,6 +181,7 @@ class SettingsWindow:
         app, c = self.app, self.app.cfg
         try:
             c.wait_minutes = max(0.5, float(self.vars["wait"].get()))
+            getattr(c, "cli_saved", {}).pop("wait_minutes", None)   # ručně uložená hodnota platí
             c.menu_hold_s = max(1.0, float(self.vars["hold"].get()))
         except (tk.TclError, ValueError):
             pass

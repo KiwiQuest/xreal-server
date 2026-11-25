@@ -88,6 +88,7 @@ class App:
         self.gconfirmed = False
         self._asked_display = False         # okno s potvrzením monitoru už bylo nabídnuto
         self._focus = False
+        self._t_input = 0.0                 # poslední tlačítko / gesto (monotonic)
         self.profile_eff = profiles.TRAY
         self.plan = profiles.plan(profiles.TRAY, DESK)
         self._plan_key = None
@@ -236,9 +237,11 @@ class App:
         elif kind == "display":
             self._t_disp = 0.0
         elif kind == "gesture":
+            self._t_input = now
             self._gesture(ev[1], now)
         elif kind == "button":
             down, t = ev[1], ev[2]
+            self._t_input = now
             if down:
                 self.btn.down(now)
                 if not self._focus:
@@ -607,7 +610,9 @@ class App:
         c = capabilities(s, self.cfg.physical_input_fresh_s)
         st = self.struggle.level(now)
         g = guidance(s, c, st, self.machine.wait_s)
-        self.overlay.render(g, self.menu, self.prompt, st, self.btn.held_for(now), self.cfg.menu_hold_s)
+        extra = ["ZKUŠEBNÍ REŽIM (--dry): myš se nehýbe a notebook nehibernuje."] if self.cfg.dry_run else []
+        self.overlay.render(g, self.menu, self.prompt, st, self.btn.held_for(now), self.cfg.menu_hold_s,
+                            extra, max(self.glasses.t_motion, self._t_input))
         self.native.set_tray(tip, TRAY_ICON.get(s.mode, "desk"))
 
     def _status_line(self) -> str:

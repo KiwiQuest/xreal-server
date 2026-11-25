@@ -77,11 +77,15 @@ def child(argv):
     from koren.app import App
     from koren.config import Config
     cfg = Config().load()
+    cfg.cli_saved = {}                   # hodnoty ze souboru pro přepínače, které platí jen pro tento běh
     if "--dry" in argv:
+        cfg.cli_saved["dry_run"] = cfg.dry_run
         cfg.dry_run = True
     if "--wait" in argv:
         try:
-            cfg.wait_minutes = float(argv[argv.index("--wait") + 1])
+            w = float(argv[argv.index("--wait") + 1])
+            cfg.cli_saved["wait_minutes"] = cfg.wait_minutes
+            cfg.wait_minutes = w
         except (IndexError, ValueError):
             pass
     App(cfg, heartbeat=HEARTBEAT).run()
