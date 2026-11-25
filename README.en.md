@@ -49,8 +49,6 @@ Later: support for custom hardware sensors and modules (ESP32, IMU, radar) conne
 | [`xreal-web/`](xreal-web/) | The original monolithic server (`server.py`) Ariel grew out of. | archive |
 | [`Xreal mouse/`](Xreal%20mouse/) | XREAL Head Mouse 2.0: head mouse, circle click, glasses button, Dasher typing, tests. | working |
 | [`rgb-test/`](rgb-test/) | Development probes and the log of how the Eye camera was brought up. | reference |
-| [`xreal-sim/`](xreal-sim/) | Flight HUD simulator (xreal-web clone). | experiment |
-| [`Adrduino/`](Adrduino/) | Arduino motor control over serial, a first step towards hardware modules. | experiment |
 
 Not included on purpose: Unity projects and builds, private hardware material, model weights (installed by scripts),
 camera captures, datasets, logs, face database and keys, local device settings, and third-party textures

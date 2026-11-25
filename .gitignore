@@ -1,4 +1,4 @@
-﻿# Verejne repo: jen serverova cast (Python/HTML pro Windows).
+# Verejne repo: jen serverova cast (Python/HTML pro Windows).
 # Vse v koreni je ignorovane, povolene jsou jen vybrane slozky.
 /*
 !/.gitignore
@@ -10,11 +10,9 @@
 !/rgb-test/
 !/Xreal mouse/
 !/xreal-web/
-!/xreal-sim/
-!/Adrduino/
 
 # Zamerne mimo repo (soukrome / Unity / buildy):
-#   Xreal Unity/, HW KOMPONENTY/, XrealGalaxi/, XrealGuns*/, XrealVisualizer/, Xreal-Effects/, _archiv/
+#   Xreal Unity/, HW KOMPONENTY/, XrealGalaxi/, XrealGuns*/, XrealVisualizer/, Xreal-Effects/, _archiv/, xreal-sim/, Adrduino/
 
 # Python
 __pycache__/
@@ -59,6 +57,3 @@ models/
 xreal_config.json
 **/data/camera.json
 
-# Prazdne pomocne soubory
-/Adrduino/1
-/Adrduino/python

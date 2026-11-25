@@ -49,8 +49,6 @@ Do budoucna: podpora vlastních HW senzorů a modulů (ESP32, IMU, radar) připo
 | [`xreal-web/`](xreal-web/) | Původní monolitický server (`server.py`), ze kterého vzniklo Ariel. | archiv |
 | [`Xreal mouse/`](Xreal%20mouse/) | XREAL Head Mouse 2.0: myš hlavou, circle click, tlačítko brýlí, Dasher psaní bez klávesnice, testy. | funguje |
 | [`rgb-test/`](rgb-test/) | Vývojové sondy a log, na kterých se kamera Eye rozchodila (`rgb_out_enable.txt`). | podklady |
-| [`xreal-sim/`](xreal-sim/) | Letecký HUD simulátor (klon xreal-web). | experiment |
-| [`Adrduino/`](Adrduino/) | Ovládání motorů přes Arduino ze sériové linky, první krok k HW modulům. | experiment |
 
 ### Co v repozitáři záměrně není
 
