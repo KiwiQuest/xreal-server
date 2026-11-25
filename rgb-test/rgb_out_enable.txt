@@ -1,0 +1,94 @@
+HID otevreno: if=0 usage_page=0xff00 XREAL One Pro
+MCU firmware: 15.1.03.603_20260914
+DSP firmware: 15.A.01.097_20250430
+Aktualni USB funkce: 0x0000aa55 (ncm=1 ecm=1 uac=1 hid=1 mtp=2 storage=2 uvc0=2 uvc1=2 enable=0)
+Zaloha puvodniho stavu: C:\AI\xreal\rgb-test\rgb_out\usb_config_backup.json
+Zapisuji USB funkce: 0x00014000 (ncm=0 ecm=0 uac=0 hid=0 mtp=0 storage=0 uvc0=0 uvc1=1 enable=1)
+OK – bryle se ted znovu pripoji (displej muze na chvili zhasnout).
+Cekam 10 s na znovupripojeni …
+HID otevreno: if=0 usage_page=0xff00 XREAL One Pro
+Nove USB funkce: 0x00006a55 (ncm=1 ecm=1 uac=1 hid=1 mtp=2 storage=2 uvc0=2 uvc1=1 enable=0)
+
+[NOVA ZARIZENI PO ZAPNUTI]
+  + Camera   OK       UVC Camera 1  (USB\VID_3318&PID_0436&MI_09\6&2174DCA6&0&0009)
+
+[KAMERY DirectShow]
+  [0] Integrated Camera
+  [1] UVC Camera 1  <-- NOVA
+  [2] Meta Quest 3
+  [3] Meta Quest 3S
+  [4] Meta Quest 2
+  [5] Meta Quest Pro
+
+? Windows vidi novou kameru od bryli. Testuji obraz …
+  zkousim DSHOW index 0 … 1920x1080 9.7 fps sede
+  zkousim DSHOW index 1 …[ WARN:0@26.202] global cap.cpp:477 cv::VideoCapture::open VIDEOIO(DSHOW): backend is generally available but can't be used to capture by index
+ nic
+  zkousim DSHOW index 2 …[ WARN:0@26.402] global cap.cpp:477 cv::VideoCapture::open VIDEOIO(DSHOW): backend is generally available but can't be used to capture by index
+ nic
+  zkousim MSMF index 0 …[ WARN:0@27.253] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@27.253] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@27.253] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@27.253] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@27.444] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@27.444] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@27.444] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@27.444] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@27.654] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@27.654] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@27.654] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@27.654] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@27.847] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@27.847] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@27.848] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@27.848] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@28.051] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@28.052] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@28.052] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+[ WARN:0@28.052] global cap_msmf.cpp:948 CvCapture_MSMF::initStream Failed to select stream 0
+ 1920x1080 30.3 fps BAREVNA
+  zkousim MSMF index 1 …[ WARN:1@29.733] global cap_msmf.cpp:477 `anonymous-namespace'::SourceReaderCB::OnReadSample videoio(MSMF): OnReadSample() is called with error status: -2147024872
+[ WARN:1@29.733] global cap_msmf.cpp:488 `anonymous-namespace'::SourceReaderCB::OnReadSample videoio(MSMF): async ReadSample() call is failed with error status: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+[ WARN:0@29.733] global cap_msmf.cpp:1816 CvCapture_MSMF::grabFrame videoio(MSMF): can't grab frame. Error: -2147024872
+ otevrena, ale bez snimku
+  zkousim MSMF index 2 …[ WARN:0@29.773] global cap.cpp:477 cv::VideoCapture::open VIDEOIO(MSMF): backend is generally available but can't be used to capture by index
+ nic
+  zkousim MSMF index 3 …[ WARN:0@29.812] global cap.cpp:477 cv::VideoCapture::open VIDEOIO(MSMF): backend is generally available but can't be used to capture by index
+ nic
+  DSHOW [0] 1920x1080 ~9.7 fps SEDY  -> C:\AI\xreal\rgb-test\rgb_out\cam0_DSHOW_1920x1080.jpg
+  MSMF [0] 1920x1080 ~30.3 fps BAREVNY  -> C:\AI\xreal\rgb-test\rgb_out\cam0_MSMF_1920x1080.jpg
+  MSMF [1] otevrena, ale BEZ snimku (pravdepodobne HEVC – viz poznamka)
+
+Poznamka: kamera posila H.265/HEVC. Kdyz Windows kameru ukaze, ale obraz nejde,
+nainstaluj 'HEVC Video Extensions' z Microsoft Store nebo zkus ffmpeg -f dshow.
+
+Vratit puvodni stav:  python eye_rgb_enable.py --disable

@@ -1,0 +1,140 @@
+{
+ "words": [
+  {
+   "id": "1a19ac08acd000",
+   "text": "Claude",
+   "key": "",
+   "pin": false,
+   "uses": 0
+  },
+  {
+   "id": "1a19ac08acd001",
+   "text": "XREAL",
+   "key": "",
+   "pin": false,
+   "uses": 0
+  },
+  {
+   "id": "1a19ac08acd002",
+   "text": "prosím",
+   "key": "",
+   "pin": false,
+   "uses": 0
+  },
+  {
+   "id": "1a19ac08acd003",
+   "text": "děkuji",
+   "key": "",
+   "pin": false,
+   "uses": 0
+  },
+  {
+   "id": "1a19ac08acd004",
+   "text": "nastavení",
+   "key": "",
+   "pin": false,
+   "uses": 0
+  },
+  {
+   "id": "1a19ac08acd005",
+   "text": "klávesnice",
+   "key": "",
+   "pin": false,
+   "uses": 2
+  },
+  {
+   "id": "1a19ac08acd006",
+   "text": "notebook",
+   "key": "",
+   "pin": false,
+   "uses": 0
+  },
+  {
+   "id": "1a19ac08acd007",
+   "text": "rozlišení",
+   "key": "",
+   "pin": false,
+   "uses": 0
+  }
+ ],
+ "phrases": [
+  {
+   "id": "1a19ac08acd000",
+   "text": "prosím tě",
+   "key": "",
+   "pin": false,
+   "uses": 0
+  },
+  {
+   "id": "1a19ac08acd001",
+   "text": "můžeš mi",
+   "key": "",
+   "pin": false,
+   "uses": 0
+  },
+  {
+   "id": "1a19ac08acd002",
+   "text": "co si o tom myslíš",
+   "key": "",
+   "pin": false,
+   "uses": 0
+  },
+  {
+   "id": "1a19ac08acd003",
+   "text": "pro jistotu",
+   "key": "",
+   "pin": false,
+   "uses": 0
+  },
+  {
+   "id": "1a19ac08acd004",
+   "text": "v podstatě",
+   "key": "",
+   "pin": false,
+   "uses": 0
+  },
+  {
+   "id": "1a19ac08acd005",
+   "text": "jak to funguje",
+   "key": "",
+   "pin": false,
+   "uses": 1
+  }
+ ],
+ "sentences": [
+  {
+   "id": "1a19ac08acd000",
+   "text": "Ahoj Claude, prosím projdi {} a napiš mi, co je potřeba opravit.",
+   "key": "ahc",
+   "pin": true,
+   "uses": 0
+  },
+  {
+   "id": "1a19ac08acd001",
+   "text": "Shrň mi to v několika bodech, stručně a česky.",
+   "key": "shr",
+   "pin": false,
+   "uses": 0
+  },
+  {
+   "id": "1a19ac08acd002",
+   "text": "Vysvětli mi to jednoduše, krok za krokem.",
+   "key": "vys",
+   "pin": false,
+   "uses": 0
+  },
+  {
+   "id": "1a19ac08acd003",
+   "text": "Děkuji, funguje to perfektně.",
+   "key": "dek",
+   "pin": false,
+   "uses": 0
+  }
+ ],
+ "learned": {
+  "super": 1,
+  "jak": 1,
+  "vypada": 1
+ },
+ "version": 1
+}

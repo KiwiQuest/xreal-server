@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kalibrace AR</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  html, body { height:100%; background:#fff; font-family:Arial,Helvetica,sans-serif; }
+  body { display:flex; flex-direction:column; }
+  .mk { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding:0; }
+  .mk img { width:100%; height:100%; object-fit:contain; image-rendering:pixelated; }
+  .bar { flex:none; background:#000; color:#fff; padding:5px 8px; display:flex; flex-direction:column; gap:5px; }
+  #st { font-weight:bold; font-size:18px; text-align:center; min-height:22px; }
+  #st .ok { color:#00ff80; } #st .no { color:#ff8060; } #st .dw { color:#ffd200; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+  button { font:bold 16px Arial,Helvetica,sans-serif; color:#fff; background:#002a14; border:2px solid #00ff80;
+    border-radius:8px; padding:0 13px; height:42px; cursor:pointer; touch-action:manipulation; }
+  button:active, button.on { background:#00ff80; color:#000; }
+  #ok { font-size:19px; min-width:200px; background:#00602a; }
+  .hint { color:#9fdcbc; font-size:14px; text-align:center; line-height:1.4; display:none; }
+  .hint.visible { display:block; }
+  .hint b.red { color:#ff5050; }
+  kbd { border:1px solid #2bd47a; border-radius:4px; padding:0 5px; font-size:13px; }
+</style>
+</head>
+<body>
+<div class="mk"><img src="/calib/marker.png" alt="kalibrační značka"></div>
+<div class="bar">
+  <div id="st">připojuji…</div>
+  <div class="row">
+    <button id="start">▶ START KALIBRACE</button>
+    <button id="ok">✓ ZAMÍŘENO</button>
+    <button id="back">◀ ZPĚT</button>
+    <button id="skip">PŘESKOČIT</button>
+    <button id="end">✕ KONEC</button>
+    <button id="auto">AUTO</button>
+    <button id="val">KONTROLA</button>
+    <button id="help" title="nápověda">?</button>
+    <button id="fs" title="celá obrazovka">⛶</button>
+  </div>
+  <div class="hint" id="hint"><b class="red">Miř zaměřovačem v brýlích na ČERVENOU TEČKU uprostřed značky.</b><br>Stránku otevři na displeji notebooku nebo na telefonu (stejná WiFi: http://IP-notebooku:8080/calib.html), jas na maximum.
+    V brýlích srovnej zaměřovač se středem značky. <b>AUTO</b>: podrž hlavu ~1,5 s v klidu a bod se potvrdí sám.
+    Jinak <kbd>mezerník</kbd> / ZAMÍŘENO. <kbd>Backspace</kbd> zpět · <kbd>Esc</kbd> konec · <kbd>S</kbd> start.</div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const post = (u, b) => fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b || {}) }).then(r => r.json());
+let C = {}, A = {}, msg = '', msgUntil = 0;
+function act(a) { post('/calib', { action: a }).then(r => { if (r.msg) { msg = r.msg; msgUntil = Date.now() + 2500; }
+  else if (r.err_px != null) { msg = `HOTOVO – průměrná chyba ${r.err_px} px (${r.n} bodů)`; msgUntil = Date.now() + 6000; } }).catch(() => {}); }
+function render() {
+  const seen = C.seen ? '<span class="ok">značku vidím ✓</span>' : '<span class="no">kamera značku nevidí</span>';
+  let t = '';
+  if (C.active) {
+    t = `bod ${C.idx + 1} / ${C.n} · miř na <span style="color:#ff5050">červenou tečku</span> · ${seen}`;
+    if (A.dwell && C.seen) t += ` · <span class="dw">drž v klidu ${'▮'.repeat(Math.round((C.dwell || 0) * 8))}${'▯'.repeat(8 - Math.round((C.dwell || 0) * 8))}</span>`;
+  } else t = C.H ? `kalibrace ±${C.err} px (${C.n_used} bodů)` : 'zatím nekalibrováno';
+  if (Date.now() < msgUntil) t += `<br>${msg.replace(/[<>&]/g, '')}`;
+  $('st').innerHTML = t;
+  for (const id of ['ok', 'back', 'skip', 'end']) $(id).style.display = C.active ? '' : 'none';
+  $('start').style.display = C.active ? 'none' : '';
+  $('auto').classList.toggle('on', !!A.dwell); $('auto').textContent = A.dwell ? 'AUTO ✓' : 'AUTO';
+  $('val').classList.toggle('on', !!A.validate);
+}
+let lastMsgT = 0;
+function poll() {
+  fetch('/calib.json').then(r => r.json()).then(d => {
+    C = d.calib || {}; A = d.ar || {};
+    render();
+  }).catch(() => { $('st').textContent = 'server neodpovídá'; }).finally(() => setTimeout(poll, 150));
+}
+poll();
+$('start').onclick = () => act('start');
+$('ok').onpointerdown = e => { e.preventDefault(); act('confirm'); };
+$('back').onclick = () => act('back');
+$('skip').onclick = () => act('skip');
+$('end').onclick = () => act('cancel');
+$('auto').onclick = () => post('/ar/settings', { dwell: !A.dwell });
+$('help').onclick = () => $('hint').classList.toggle('visible');
+$('fs').onclick = () => { const d = document; (d.fullscreenElement ? d.exitFullscreen() : d.documentElement.requestFullscreen()).catch(() => {}); };
+$('val').onclick = () => post('/ar/settings', { validate: !A.validate });
+addEventListener('keydown', e => {
+  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (C.active) act('confirm'); }
+  else if (e.key === 'Backspace') { e.preventDefault(); act('back'); }
+  else if (e.key === 'Escape') act('cancel');
+  else if (e.key === 's' || e.key === 'S') act('start');
+});
+</script>
+</body>
+</html>

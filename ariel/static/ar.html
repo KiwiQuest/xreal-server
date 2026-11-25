@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XREAL AR</title>
+<style>
+  /* v brylich je cerna = pruhledna: kresli se jen overlay na realny svet */
+  html, body { margin:0; height:100%; background:#000; overflow:hidden; cursor:none; }
+  canvas { position:fixed; inset:0; width:100vw; height:100vh; display:block; }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<script>
+const cv = document.getElementById('cv'), g = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = window.devicePixelRatio || 1;
+  W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+// ── stav ze serveru (WebSocket, zaloha HTTP) ───────────────────────────────
+let S = {}, wsOk = false, ws = null;
+function connect() {
+  try { ws = new WebSocket(`ws://${location.hostname || 'localhost'}:8765`); } catch (e) { ws = null; return; }
+  ws.onopen = () => { wsOk = true; };
+  ws.onclose = () => { wsOk = false; setTimeout(connect, 1500); };
+  ws.onerror = () => {};
+  ws.onmessage = e => { try { onState(JSON.parse(e.data)); } catch (err) {} };
+}
+connect();
+setInterval(() => { if (!wsOk) fetch('/state').then(r => r.json()).then(onState).catch(() => {}); }, 120);
+const post = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+setInterval(() => post('/ar/alive').catch(() => {}), 3000);    // YOLO bezi i bez videa
+post('/ar/alive').catch(() => {});
+
+let dsT = 0, dsFlash = 0;
+let lastSeq = -1, dets = [], detT = 0, detHead = [0, 0], msg = null;
+function onState(d) {
+  S = d;
+  if (d.yolo && d.yolo.seq !== lastSeq) {
+    lastSeq = d.yolo.seq; dets = d.yolo.dets || []; detT = performance.now(); detHead = d.yolo.head || [0, 0];
+    track(dets);
+  }
+  if (d.dataset && d.dataset.t && d.dataset.t !== dsT) {     // snimek ulozen -> potvrzeni v brylich
+    if (dsT !== 0) dsFlash = performance.now();
+    dsT = d.dataset.t;
+  }
+  if (d.calib_msg && (!msg || d.calib_msg.t !== msg.t)) { msg = { ...d.calib_msg, until: performance.now() + 2500 }; }
+}
+
+// ── jen jedno oko: v 3D rezimu bryli (3840x1080, obraz vedle sebe) se kresli
+//    jen do poloviny pro zvolene oko; ve 2D rezimu obe oci vidi totez ──────────
+let RX = 0, RW = 0;
+function region() {
+  const eye = (S.ar && S.ar.eye) || 'both', sbs = W / H > 2.5;
+  if (eye !== 'both' && sbs) { RW = W / 2; RX = eye === 'right' ? W / 2 : 0; } else { RX = 0; RW = W; }
+}
+// ── prevod kamera (u,v 0..1, cely zaber) -> displej (px) pres homografii ─────
+function map(u, v) {
+  const M = S.calib && S.calib.H;
+  if (!M) return [RX + u * RW, v * H];
+  const x = M[0][0] * u + M[0][1] * v + M[0][2], y = M[1][0] * u + M[1][1] * v + M[1][2], w = M[2][0] * u + M[2][1] * v + M[2][2];
+  return [RX + x / w * RW, y / w * H];
+}
+// kompenzace pohybu hlavy mezi snimkem kamery a ted (IMU bryli)
+function headOffset() {
+  const A = S.ar || {};
+  if (!A.head_comp || !S.connected) return [0, 0];
+  const dy = (S.yaw || 0) - (detHead[0] || 0), dp = (S.pitch || 0) - (detHead[1] || 0);
+  return [-(A.inv_x ? -1 : 1) * dy * A.px_deg, (A.inv_y ? -1 : 1) * dp * A.px_deg];
+}
+
+// ── vyhlazeni: stejny objekt mezi snimky (trida + prekryv) ───────────────────
+let tracks = [];
+function iou(a, b) {
+  const x1 = Math.max(a[0], b[0]), y1 = Math.max(a[1], b[1]), x2 = Math.min(a[2], b[2]), y2 = Math.min(a[3], b[3]);
+  const i = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  return i / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - i + 1e-9);
+}
+function dedupe(list) {                       // stejny predmet nalezeny dvakrat -> nechat jistejsi
+  const out = [];
+  for (const d of [...list].sort((a, b) => b.conf - a.conf)) {
+    const b = d.sbox || d.box;
+    if (!out.some(o => o.cls === d.cls && iou(o.sbox || o.box, b) > 0.45)) out.push(d);
+  }
+  return out;
+}
+function track(list) {
+  list = dedupe(list);
+  const A = S.ar || {}, k = 1 - Math.min(0.9, Math.max(0, A.smooth ?? 0.5)), now = performance.now();
+  const used = new Set();
+  for (const d of list) {
+    if (d.conf < (A.min_conf ?? 0.4)) continue;
+    const b = d.sbox || d.box;
+    let best = null, bi = 0;
+    for (const t of tracks) {
+      if (used.has(t) || t.cls !== d.cls) continue;
+      const v = iou(t.b, b); if (v > bi) { bi = v; best = t; }
+    }
+    if (best && bi > 0.25) {
+      best.b = best.b.map((x, i) => x + (b[i] - x) * k);
+      best.d = d; best.seen = now; used.add(best);
+    } else {
+      const t = { b: b.slice(), cls: d.cls, d, seen: now, born: now };
+      tracks.push(t); used.add(t);
+    }
+  }
+  tracks = tracks.filter(t => now - t.seen < 400);
+}
+
+// ── kresleni ─────────────────────────────────────────────────────────────────
+function rgb(c, a) { return `rgba(${c[0]},${c[1]},${c[2]},${a})`; }
+function hexRgb(h) {                          // "#rrggbb" nebo [r,g,b]
+  if (Array.isArray(h)) return h;
+  const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); if (!m) return [0, 255, 128];
+  const n = parseInt(m[1], 16); return [n >> 16 & 255, n >> 8 & 255, n & 255];
+}
+function bright(c) {                           // v brylich jen jasne barvy jsou dobre videt
+  c = hexRgb(c); const m = Math.max(...c, 1), f = 255 / m;
+  return c.map(x => Math.min(255, Math.round(x * f * 0.95 + 25)));
+}
+function bracket(p, q, r, len) {             // roh v bode q, ramena k p a r
+  const a = [p[0] - q[0], p[1] - q[1]], b = [r[0] - q[0], r[1] - q[1]];
+  const la = Math.hypot(...a) || 1, lb = Math.hypot(...b) || 1;
+  g.moveTo(q[0] + a[0] / la * Math.min(len, la / 2), q[1] + a[1] / la * Math.min(len, la / 2));
+  g.lineTo(q[0], q[1]);
+  g.lineTo(q[0] + b[0] / lb * Math.min(len, lb / 2), q[1] + b[1] / lb * Math.min(len, lb / 2));
+}
+function drawDets(now) {
+  const A = S.ar || {}, [ox, oy] = headOffset(), fs = Math.round(20 * (A.font || 1)), lw = A.width || 3;
+  g.save(); g.translate(ox, oy);
+  for (const t of tracks) {
+    const age = now - t.seen, alpha = age < 150 ? 1 : Math.max(0, 1 - (age - 150) / 250);
+    const d = t.d, col = bright(d.color || [0, 255, 128]);
+    const [x1, y1, x2, y2] = t.b;
+    const P = [map(x1, y1), map(x2, y1), map(x2, y2), map(x1, y2)];
+    g.lineWidth = lw; g.strokeStyle = rgb(col, alpha); g.lineJoin = 'round'; g.lineCap = 'round';
+    if ((A.outline || A.fill) && d.poly && d.poly.length > 2 && !d.sbox) {
+      // maska patri k surovemu boxu tohoto snimku -> posunout/zvetsit na vyhlazeny box (netrese se)
+      const [b1, b2, b3, b4] = d.box, sx = (x2 - x1) / Math.max(1e-6, b3 - b1), sy = (y2 - y1) / Math.max(1e-6, b4 - b2);
+      g.beginPath();
+      d.poly.forEach(([u, v], i) => {
+        const [x, y] = map(x1 + (u - b1) * sx, y1 + (v - b2) * sy);
+        i ? g.lineTo(x, y) : g.moveTo(x, y);
+      });
+      g.closePath();
+      if (A.fill) {                                    // pruhledna vypln = barevne "nasviceni" predmetu
+        g.fillStyle = rgb(col, alpha * Math.min(0.9, Math.max(0.05, A.fill_alpha ?? 0.35)));
+        g.fill();
+      }
+      if (A.outline) { g.lineWidth = Math.max(1, lw - 1); g.stroke(); g.lineWidth = lw; }
+    }
+    if (A.boxes !== false) {
+      const len = Math.max(14, Math.min(60, Math.hypot(P[1][0] - P[0][0], P[1][1] - P[0][1]) * 0.22));
+      g.beginPath();
+      for (let i = 0; i < 4; i++) bracket(P[(i + 3) % 4], P[i], P[(i + 1) % 4], len);
+      g.stroke();
+    }
+    if (A.labels) {
+      const txt = `${d.name} ${Math.round(d.conf * 100)}%`;
+      g.font = `bold ${fs}px Arial, Helvetica, sans-serif`;
+      const x = Math.min(P[0][0], P[3][0]), y = Math.min(P[0][1], P[1][1]) - 6;
+      const tw = g.measureText(txt).width;               // popisek vzdy na displeji
+      g.fillStyle = rgb(col, alpha); g.fillText(txt, Math.min(RX + RW - tw - 6, Math.max(RX + 6, x)), Math.min(H - 44, Math.max(fs + 4, y)));
+    }
+  }
+  g.restore();
+}
+function drawOcr(now) {
+  const A = S.ar || {}, o = S.ocr;
+  if (!A.ocr || !o || !o.lines || !o.lines.length) return;
+  if (!o.live && Date.now() / 1000 - o.t > 6) return;
+  if (S.yolo && S.yolo.zoom && S.yolo.zoom.z > 1.001) return;     // pri zoomu by ramecky nesedely
+  g.strokeStyle = 'rgba(255,210,0,0.9)'; g.lineWidth = 2;
+  for (const l of o.lines) {
+    const [x1, y1, x2, y2] = l.box, P = [map(x1, y1), map(x2, y1), map(x2, y2), map(x1, y2)];
+    g.beginPath(); P.forEach((p, i) => i ? g.lineTo(...p) : g.moveTo(...p)); g.closePath(); g.stroke();
+  }
+}
+function cross(x, y, r, col, lw) {
+  g.strokeStyle = col; g.lineWidth = lw;
+  g.beginPath();
+  g.moveTo(x - r * 2.2, y); g.lineTo(x - r * 0.45, y); g.moveTo(x + r * 0.45, y); g.lineTo(x + r * 2.2, y);
+  g.moveTo(x, y - r * 2.2); g.lineTo(x, y - r * 0.45); g.moveTo(x, y + r * 0.45); g.lineTo(x, y + r * 2.2);
+  g.stroke();
+  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
+  g.beginPath(); g.arc(x, y, 2.5, 0, Math.PI * 2); g.fillStyle = col; g.fill();
+}
+function text(t, x, y, size, col, align) {
+  g.font = `bold ${size}px Arial, Helvetica, sans-serif`; g.textAlign = align || 'center'; g.fillStyle = col;
+  g.fillText(t, x, y); g.textAlign = 'left';
+}
+function drawCalib() {
+  const c = S.calib;
+  if (!c || !c.active || !c.target) return false;
+  const [tx, ty] = c.target, x = RX + tx * RW, y = ty * H, CX = RX + RW / 2;
+  cross(x, y, 26, c.seen ? '#00ff80' : '#ffd200', 3);
+  if (c.dwell > 0) {                                  // auto potvrzeni: kroužek se plni, kdyz drzis v klidu
+    g.strokeStyle = '#00ff80'; g.lineWidth = 6;
+    g.beginPath(); g.arc(x, y, 40, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * c.dwell); g.stroke();
+  }
+  const below = ty < 0.5;
+  const yy = below ? y + 105 : y - 160;            // text mimo zamerovac
+  text(`KALIBRACE  ${c.idx + 1} / ${c.n}`, CX, Math.max(40, Math.min(H - 70, yy)), 30, '#ffffff');
+  text((S.ar && S.ar.dwell) ? 'srovnej zaměřovač s červenou tečkou uprostřed značky a podrž hlavu v klidu  (nebo mezerník / ZAMÍŘENO)'
+       : 'srovnej zaměřovač s červenou tečkou uprostřed značky  →  mezerník / ZAMÍŘENO',
+       CX, Math.max(76, Math.min(H - 34, yy + 36)), 20, '#cfcfcf');
+  text(c.seen ? 'značku vidím ✓' : 'kamera značku nevidí – podívej se na značku',
+       CX, Math.max(108, Math.min(H - 6, yy + 68)), 20, c.seen ? '#00ff80' : '#ff8060');
+  return true;
+}
+function drawValidate() {
+  const c = S.calib, A = S.ar || {};
+  if (!A.validate || !c) return;
+  if (!c.uv) { text('kontrola: kamera značku nevidí', RX + RW / 2, 40, 22, '#ff8060'); return; }
+  const [ox, oy] = headOffset(), [x, y] = map(c.uv[0], c.uv[1]);
+  cross(x + ox, y + oy, 18, '#00e5ff', 3);
+  text('kontrola: kroužek má sedět na červené tečce značky', RX + RW / 2, 40, 22, '#00e5ff');
+}
+function drawStatus() {
+  if (!showInfo) return;
+  const y = S.yolo, c = S.calib, A = S.ar || {};
+  const parts = [];
+  parts.push(y ? `${y.model || 'YOLO'} · ${y.fps || 0} fps` : 'YOLO se spouští…');
+  if (y && y.task !== 'seg' && (A.fill || A.outline)) parts.push('masky: přepni model na segmentaci (M)');
+  parts.push(c && c.H ? `kalibrace ±${c.err} px` : 'NEKALIBROVÁNO – C = kalibrace');
+  if (A.head_comp) parts.push(S.connected ? 'hlava ✓' : 'hlava: NO IMU');
+  g.font = '15px Arial, Helvetica, sans-serif'; g.fillStyle = c && c.H ? 'rgba(0,255,128,0.55)' : 'rgba(255,200,0,0.9)';
+  g.fillText(parts.join('   ·   '), RX + 14, H - 14);
+}
+function drawDataset(now) {
+  const D = S.dataset; if (!D) return;
+  const age = now - dsFlash;
+  if (dsFlash && age < 1600) {                     // kratky ramecek + text = "vyfoceno"
+    const a = Math.max(0, 1 - age / 1600);
+    g.strokeStyle = `rgba(255,255,255,${a * 0.9})`; g.lineWidth = 6; g.strokeRect(RX + 4, 4, RW - 8, H - 8);
+    text(`📸 uloženo · ${D.count}`, RX + RW - 20, 46, 28, `rgba(255,255,255,${a})`, 'right');
+  }
+  if (D.learn) text('UČENÍ TLAČÍTKA: zmáčkni na brýlích tlačítko, kterým chceš fotit', RX + RW / 2, H - 50, 24, '#ffd200');
+}
+let showInfo = true;
+function frame() {
+  const now = performance.now();
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+  region();
+  if (!drawCalib()) {
+    drawDets(now);
+    drawOcr(now);
+    drawValidate();
+  }
+  if (msg && now < msg.until && msg.msg) text(msg.msg, RX + RW / 2, H / 2 + 140, 26, msg.ok ? '#00ff80' : '#ff8060');
+  else if (msg && now < msg.until && msg.auto && msg.ok && msg.err_px == null) text('✓ bod uložen', RX + RW / 2, H / 2 + 140, 26, '#00ff80');
+  else if (msg && now < msg.until && msg.err_px != null) text(`kalibrace hotová – průměrná chyba ${msg.err_px} px (${msg.n} bodů)`, RX + RW / 2, H / 2, 28, '#00ff80');
+  drawDataset(now);
+  drawStatus();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ── klavesy (v brylich se pise tabletovou klavesnici) ───────────────────────
+const setAr = b => post('/ar/settings', b).catch(() => {});
+addEventListener('keydown', e => {
+  const A = S.ar || {}, act = S.calib && S.calib.active, k = e.key.toLowerCase();
+  if (act && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); post('/calib', { action: 'confirm' }).then(r => r.json()).then(r => { if (!r.ok) msg = { msg: r.msg, ok: false, until: performance.now() + 2000 }; }); }
+  else if (act && e.key === 'Backspace') post('/calib', { action: 'back' });
+  else if (act && e.key === 'Escape') post('/calib', { action: 'cancel' });
+  else if (k === 'c') post('/calib', { action: 'start' });
+  else if (k === 'v') setAr({ validate: !A.validate });
+  else if (k === 'l') setAr({ labels: !A.labels });
+  else if (k === 'o') setAr({ outline: !A.outline });
+  else if (k === 'p') setAr({ fill: !A.fill });
+  else if (k === 'm') post('/yolo/config', { task: (S.yolo && S.yolo.task === 'seg') ? 'det' : 'seg' });
+  else if (k === '[' || k === ']') setAr({ fill_alpha: Math.round(Math.min(0.9, Math.max(0.05, (A.fill_alpha ?? 0.35) + (k === ']' ? 0.05 : -0.05))) * 100) / 100 });
+  else if (k === 'b') setAr({ boxes: !(A.boxes !== false) });
+  else if (k === 'h') setAr({ head_comp: !A.head_comp });
+  else if (k === 'i') showInfo = !showInfo;
+  else if (k === 'k') post('/dataset', { shoot: 1, why: 'klavesa' });
+  else if (k === 'e') setAr({ eye: { both: 'left', left: 'right', right: 'both' }[A.eye || 'both'] });
+  else if (k === 'f') { const d = document; (d.fullscreenElement ? d.exitFullscreen() : d.documentElement.requestFullscreen()).catch(() => {}); }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ariel Demo</title>
+<!--
+  Demo pro navstevu ve stylu Google Glass (2012). Samostatna stranka, nepotrebuje server ani internet.
+  Spusteni: demo.bat (otevre ji pres celou plochu bryli) nebo /demo.html v prohlizeci + F11.
+  Obraz je v obou ocich STEJNY (zadny dvojity obraz, nic u nosu).
+  Rozlozeni se vybere samo: okno sirsi nez 3:1 (Full SBS 3840x1080) -> dve poloviny, jinak jeden obraz.
+  Klavesy: mezernik / sipka vpravo = dalsi scenka, sipka vlevo = predchozi, P = pauza,
+           F = cela obrazovka, S = prepnout SBS/jeden obraz, C = karta ve stredu / vpravo nahore,
+           + / - = velikost karty, 1-9 = skok na scenku. Klik mysi = dalsi.
+  Tlacitko bryli (kdyz bezi Ariel) = dalsi scenka.
+  URL: ?sbs=1|0 vynutit rozlozeni  ?pos=c stred  ?scale=1.2 velikost  ?auto=0 bez automatiky
+-->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #000; overflow: hidden; cursor: none;
+               font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif; color: #fff;
+               user-select: none; }
+  .eye { position: fixed; top: 0; height: 100%; overflow: hidden; background: #000; }
+  /* navrhove platno 1920x1080, skaluje se do oka */
+  .canvas { position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px;
+            transform-origin: 50% 50%; }
+  .card { position: absolute; width: 1040px; height: 585px; overflow: hidden;
+          transition: left .6s ease, top .6s ease; }
+  .card.tr { left: 760px; top: 110px; }
+  .card.c  { left: 440px; top: 247px; }
+  .scene { position: absolute; inset: 0; padding: 56px 64px; animation: sceneIn .7s ease both; }
+  .scene.out { animation: sceneOut .45s ease both; }
+  @keyframes sceneIn  { from { opacity: 0; transform: translateX(80px); } to { opacity: 1; transform: none; } }
+  @keyframes sceneOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(-80px); } }
+
+  .clock { position: absolute; top: 40px; right: 56px; font-size: 40px; font-weight: 300; color: #ddd; }
+  .huge  { font-size: 190px; font-weight: 200; line-height: 1; letter-spacing: -4px; }
+  .big   { font-size: 84px; font-weight: 300; line-height: 1.1; }
+  .mid   { font-size: 54px; font-weight: 300; line-height: 1.25; }
+  .small { font-size: 38px; font-weight: 300; color: #bbb; }
+  .muted { color: #8a8a8a; }
+  .foot  { position: absolute; left: 64px; right: 64px; bottom: 48px; font-size: 36px; color: #999;
+           font-weight: 300; }
+  .bar   { position: absolute; left: 0; right: 0; bottom: 0; height: 10px; }
+  .blue { color: #34a9ff; } .green { color: #3ddc84; } .red { color: #ff4f4f; } .yellow { color: #ffcc33; }
+  .bg-blue { background: #34a9ff; } .bg-green { background: #3ddc84; } .bg-red { background: #ff4f4f; }
+  .bg-yellow { background: #ffcc33; }
+  .dots { position: absolute; bottom: 22px; left: 0; right: 0; text-align: center; }
+  .dots i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #333;
+            margin: 0 7px; }
+  .dots i.on { background: #ccc; }
+  .fade-up { animation: fadeUp .8s ease both; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: none; } }
+  .d1 { animation-delay: .4s; } .d2 { animation-delay: 1.1s; } .d3 { animation-delay: 1.9s; } .d4 { animation-delay: 2.8s; }
+  .pulse { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: .45; } 50% { opacity: 1; } }
+  .avatar { width: 150px; height: 150px; border-radius: 50%; display: flex; align-items: center;
+            justify-content: center; font-size: 80px; font-weight: 300; color: #000; float: left;
+            margin-right: 44px; }
+  .row { display: flex; align-items: center; gap: 44px; }
+  .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none;
+           animation: flash .9s ease-out .8s both; }
+  @keyframes flash { 0% { opacity: 0; } 8% { opacity: .9; } 100% { opacity: 0; } }
+  .brk { position: absolute; border: 6px solid #3ddc84; width: 90px; height: 90px; }
+  .typing::after { content: '▌'; animation: pulse 1s steps(1) infinite; color: #34a9ff; }
+  svg { display: block; }
+</style>
+</head>
+<body>
+<div class="eye" id="eyeL"><div class="canvas"><div class="card tr"></div></div></div>
+<div class="eye" id="eyeR"><div class="canvas"><div class="card tr"></div></div></div>
+<script>
+const Q = new URLSearchParams(location.search);
+let SBS = Q.has('sbs') ? Q.get('sbs') === '1' : null;     // null = podle pomeru stran okna
+let POS = Q.get('pos') === 'c' ? 'c' : 'tr';
+let SCALE = parseFloat(Q.get('scale') || '1') || 1;
+let AUTO = Q.get('auto') !== '0';
+
+// ── rozlozeni oci ──
+const eyeL = document.getElementById('eyeL'), eyeR = document.getElementById('eyeR');
+function layout() {
+  const w = innerWidth, h = innerHeight;
+  const sbs = SBS === null ? w / h > 2.6 : SBS;
+  const ew = sbs ? w / 2 : w;
+  eyeL.style.left = '0'; eyeL.style.width = ew + 'px';
+  eyeR.style.display = sbs ? 'block' : 'none';
+  eyeR.style.left = ew + 'px'; eyeR.style.width = ew + 'px';
+  const s = Math.min(ew / 1920, h / 1080) * SCALE;
+  for (const c of document.querySelectorAll('.canvas'))
+    c.style.transform = `translate(-50%,-50%) scale(${s})`;
+  for (const c of document.querySelectorAll('.card')) c.className = 'card ' + POS;
+}
+addEventListener('resize', layout);
+
+// ── pomocne ──
+const pad = n => String(n).padStart(2, '0');
+const DNY = ['neděle', 'pondělí', 'úterý', 'středa', 'čtvrtek', 'pátek', 'sobota'];
+const MES = ['ledna', 'února', 'března', 'dubna', 'května', 'června', 'července', 'srpna', 'září',
+             'října', 'listopadu', 'prosince'];
+const hhmm = () => { const d = new Date(); return `${d.getHours()}:${pad(d.getMinutes())}`; };
+const setAll = (sel, v) => document.querySelectorAll(sel).forEach(e => e.textContent = v);
+const setHTML = (sel, v) => document.querySelectorAll(sel).forEach(e => e.innerHTML = v);
+let timers = [];
+const later = (ms, fn) => timers.push(setTimeout(fn, ms));
+const every = (ms, fn) => timers.push(setInterval(fn, ms));
+const clock = () => `<div class="clock" data-clock>${hhmm()}</div>`;
+setInterval(() => setAll('[data-clock]', hhmm()), 1000);
+
+// ── scenky: {dur ms, html(), run()} ──
+const SCENES = [
+  { dur: 6000, html: () => `
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div class="big pulse">ok glass</div>
+        <div class="small fade-up d3" style="margin-top:40px">Ariel · XREAL One Pro</div>
+      </div>` },
+
+  { dur: 7000, html: () => { const d = new Date(); return `
+      <div class="huge" data-clock2>${hhmm()}</div>
+      <div class="mid fade-up d1" style="margin-top:24px">${DNY[d.getDay()]} ${d.getDate()}. ${MES[d.getMonth()]}</div>
+      <div class="foot fade-up d2"><span class="blue">„ok glass“</span> · řekni příkaz</div>`; },
+    run: () => every(1000, () => setAll('[data-clock2]', hhmm())) },
+
+  { dur: 8000, html: () => `${clock()}
+      <div class="small fade-up">Nová zpráva</div>
+      <div class="row fade-up d1" style="margin-top:40px">
+        <div class="avatar bg-blue">P</div>
+        <div><div class="big">Petra</div><div class="mid muted">Dáš si taky kafe? ☕</div></div>
+      </div>
+      <div class="foot fade-up d3">Klepni pro <span class="blue">odpověď hlasem</span></div>
+      <div class="bar bg-blue"></div>` },
+
+  { dur: 8000, html: () => `${clock()}
+      <div class="small fade-up">Odpověď hlasem</div>
+      <div class="big blue" style="margin-top:60px;min-height:200px" data-type></div>
+      <div class="foot fade-up d4"><span class="green">✓ Odesláno</span></div>
+      <div class="bar bg-green"></div>`,
+    run: () => typewriter('[data-type]', 'Jasně, za pět minut!', 300, 70) },
+
+  { dur: 8000, html: () => `${clock()}
+      <div class="row" style="height:100%;margin-top:-30px">
+        ${sunSvg()}
+        <div><div class="huge" style="font-size:170px">4°</div>
+             <div class="mid">Praha · polojasno</div>
+             <div class="small fade-up d2">zítra 7° · déšť ve 14:00</div></div>
+      </div>` },
+
+  { dur: 9000, html: () => `${clock()}
+      <div class="row" style="height:100%;margin-top:-30px">
+        <svg width="260" height="300" viewBox="0 0 260 300">
+          <path d="M70 290 V130 Q70 90 110 90 H200" fill="none" stroke="#34a9ff" stroke-width="34"
+                stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M180 40 L250 90 L180 140 Z" fill="#34a9ff"/>
+        </svg>
+        <div><div class="huge" style="font-size:150px"><span data-dist>200</span> m</div>
+             <div class="mid">doprava · Vodičkova</div>
+             <div class="small fade-up d2">příjezd 23 min · pěšky</div></div>
+      </div>
+      <div class="bar bg-blue" data-prog style="transform-origin:left;transition:transform .2s linear"></div>`,
+    run: () => { let m = 200; every(120, () => { m = Math.max(0, m - 3);
+        setAll('[data-dist]', m);
+        document.querySelectorAll('[data-prog]').forEach(e => e.style.transform = `scaleX(${m / 200})`); }); } },
+
+  { dur: 7000, html: () => `
+      <div class="brk" style="left:60px;top:50px;border-right:0;border-bottom:0"></div>
+      <div class="brk" style="right:60px;top:50px;border-left:0;border-bottom:0"></div>
+      <div class="brk" style="left:60px;bottom:50px;border-right:0;border-top:0"></div>
+      <div class="brk" style="right:60px;bottom:50px;border-left:0;border-top:0"></div>
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div class="big" data-snap>„ok glass, vyfoť to“</div>
+        <div class="mid green fade-up d3" style="margin-top:30px">✓ Fotka uložena</div>
+      </div>
+      <div class="flash"></div>` },
+
+  { dur: 9000, html: () => `${clock()}
+      <div class="small fade-up">Překlad · angličtina → čeština</div>
+      <div class="mid muted fade-up d1" style="margin-top:50px">„Where is the train station?“</div>
+      <div class="big" style="margin-top:40px;min-height:120px" data-type></div>
+      <div class="bar bg-yellow"></div>`,
+    run: () => typewriter('[data-type]', 'Kde je nádraží?', 1700, 80) },
+
+  { dur: 8000, html: () => `${clock()}
+      <div class="small fade-up">Kamera · rozpoznávání</div>
+      <div class="row" style="margin-top:60px">
+        <svg width="220" height="220" viewBox="0 0 220 220">
+          <rect x="10" y="10" width="200" height="200" fill="none" stroke="#3ddc84" stroke-width="6"
+                stroke-dasharray="60 80" stroke-dashoffset="0">
+            <animate attributeName="stroke-dashoffset" from="0" to="-280" dur="2s" repeatCount="indefinite"/></rect>
+          <circle cx="110" cy="110" r="10" fill="#3ddc84"/></svg>
+        <div><div class="big"><span data-obj>hledám…</span></div>
+             <div class="mid green" data-conf></div></div>
+      </div>
+      <div class="bar bg-green"></div>`,
+    run: () => { later(1800, () => { setAll('[data-obj]', 'Hrnek'); });
+                 let c = 0; later(1800, () => every(40, () => { if (c < 97) c++; setAll('[data-conf]', c + ' % jistota'); })); } },
+
+  { dur: 8000, html: () => `${clock()}
+      <div class="row">
+        <div class="huge red pulse" style="font-size:150px">♥</div>
+        <div><div class="huge" style="font-size:150px"><span data-bpm>72</span></div>
+             <div class="small">tepů / min · 6 240 kroků</div></div>
+      </div>
+      <svg width="912" height="160" viewBox="0 0 912 160" style="margin-top:30px">
+        <path data-ecg fill="none" stroke="#ff4f4f" stroke-width="5" stroke-linejoin="round"/></svg>`,
+    run: () => { let t = 0; every(40, () => { t++; const pts = [];
+        for (let x = 0; x <= 912; x += 6) { const p = ((x + t * 12) % 300);
+          const y = p > 140 && p < 150 ? 20 : p >= 150 && p < 160 ? 150 : p >= 160 && p < 170 ? 60 : 100 + Math.sin(x / 30) * 4;
+          pts.push(`${x},${y}`); }
+        document.querySelectorAll('[data-ecg]').forEach(e => e.setAttribute('d', 'M' + pts.join(' L')));
+        if (t % 25 === 0) setAll('[data-bpm]', 70 + Math.round(Math.random() * 5)); }); } },
+
+  { dur: 8000, html: () => `
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+        <div class="huge fade-up" style="font-size:160px">ariel</div>
+        <div class="mid muted fade-up d1">vlastní software pro XREAL One Pro</div>
+        <div class="small fade-up d2" style="margin-top:30px">díky, že se díváš 👋</div>
+      </div>` },
+];
+
+function sunSvg() { return `
+  <svg width="300" height="300" viewBox="0 0 300 300">
+    <g style="transform-origin:120px 120px;animation:spin 18s linear infinite">
+      <circle cx="120" cy="120" r="55" fill="#ffcc33"/>
+      ${[...Array(8)].map((_, i) => `<rect x="114" y="20" width="12" height="36" rx="6" fill="#ffcc33"
+          transform="rotate(${i * 45} 120 120)"/>`).join('')}
+    </g>
+    <path d="M90 250 Q60 250 60 220 Q60 190 95 190 Q105 150 150 150 Q195 150 205 190 Q245 190 245 222
+             Q245 250 215 250 Z" fill="#ddd">
+      <animateTransform attributeName="transform" type="translate" values="0 0;14 0;0 0" dur="5s" repeatCount="indefinite"/>
+    </path>
+    <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+  </svg>`; }
+
+function typewriter(sel, text, delay, step) {
+  setHTML(sel, '');
+  document.querySelectorAll(sel).forEach(e => e.classList.add('typing'));
+  let i = 0;
+  later(delay, () => every(step, () => { if (i <= text.length) setAll(sel, text.slice(0, i++)); }));
+}
+
+// ── prehravani ──
+let idx = 0, autoT = null, paused = false;
+function dots() { return `<div class="dots">${SCENES.map((_, i) => `<i class="${i === idx ? 'on' : ''}"></i>`).join('')}</div>`; }
+function show(i) {
+  timers.forEach(t => { clearTimeout(t); clearInterval(t); }); timers = [];
+  clearTimeout(autoT);
+  const cards = document.querySelectorAll('.card');
+  cards.forEach(c => c.querySelectorAll('.scene').forEach(s => { s.classList.add('out'); setTimeout(() => s.remove(), 450); }));
+  idx = (i + SCENES.length) % SCENES.length;
+  const sc = SCENES[idx], html = `<div class="scene">${sc.html()}${dots()}</div>`;
+  cards.forEach(c => c.insertAdjacentHTML('beforeend', html));     // obe oci stejne a ve stejny okamzik
+  if (sc.run) sc.run();
+  if (AUTO && !paused) autoT = setTimeout(() => show(idx + 1), sc.dur);
+}
+
+addEventListener('keydown', e => {
+  const k = e.key;
+  if (k === ' ' || k === 'ArrowRight' || k === 'Enter' || k === 'PageDown') show(idx + 1);
+  else if (k === 'ArrowLeft' || k === 'PageUp') show(idx - 1);
+  else if (k === 'p' || k === 'P') { paused = !paused; show(idx); }
+  else if (k === 'f' || k === 'F') { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); }
+  else if (k === 's' || k === 'S') { const now = eyeR.style.display !== 'none'; SBS = !now; layout(); }
+  else if (k === 'c' || k === 'C') { POS = POS === 'c' ? 'tr' : 'c'; layout(); }
+  else if (k === '+' || k === '=') { SCALE = Math.min(1.6, SCALE + 0.1); layout(); }
+  else if (k === '-') { SCALE = Math.max(0.5, SCALE - 0.1); layout(); }
+  else if (/^[1-9]$/.test(k)) show(+k - 1);
+  else return;
+  e.preventDefault();
+});
+addEventListener('click', () => show(idx + 1));
+
+// ── volitelne: tlacitko bryli pres Ariel (kdyz server nebezi, nic se nedeje) ──
+let lastBtnT = null;
+function connect() {
+  let ws; try { ws = new WebSocket('ws://localhost:8765'); } catch (e) { return; }
+  ws.onmessage = e => { try { const b = JSON.parse(e.data).btn;
+      if (b && b.t != null) { if (lastBtnT !== null && b.t !== lastBtnT) show(idx + 1); lastBtnT = b.t; } } catch (_) {} };
+  ws.onclose = () => setTimeout(connect, 5000);
+  ws.onerror = () => { try { ws.close(); } catch (_) {} };
+}
+connect();
+
+layout();
+show(0);
+</script>
+</body>
+</html>

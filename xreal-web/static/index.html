@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XREAL HUD</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #00ff80;
+    user-select: none;
+  }
+  canvas { display: block; position: fixed; inset: 0; }
+
+  /* status bar */
+  #status {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    font-size: 13px; color: #2a6644; letter-spacing: .08em;
+    pointer-events: none;
+  }
+
+  /* modul-switcher */
+  #tabs {
+    position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 24px;
+    pointer-events: none;
+  }
+  .tab {
+    font-size: 11px; letter-spacing: .12em; color: #1a4433;
+    transition: color .2s;
+  }
+  .tab.active { color: #4dc3ff; }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+<div id="tabs">
+  <span class="tab active" data-i="0">GAZE</span>
+  <span class="tab" data-i="1">INFO</span>
+  <span class="tab" data-i="2">PINY</span>
+</div>
+<div id="status">připojuji…</div>
+
+<script>
+// ── canvas setup ──────────────────────────────────────────────────────────────
+const cvs = document.getElementById('c');
+const ctx = cvs.getContext('2d');
+let W, H;
+function resize() {
+  W = cvs.width  = window.innerWidth;
+  H = cvs.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── stav ──────────────────────────────────────────────────────────────────────
+let data = { yaw: 0, pitch: 0, hz: 0, connected: false,
+             calibrating: true, status: '…', pins: [] };
+let mod  = 0;    // aktivní modul
+const MODS = ['GAZE', 'INFO', 'PINY'];
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+function connect() {
+  const ws = new WebSocket(`ws://${location.hostname}:8765`);
+  ws.onmessage = e => { data = JSON.parse(e.data); };
+  ws.onopen    = () => document.getElementById('status').textContent = 'připojeno';
+  ws.onclose   = () => {
+    document.getElementById('status').textContent = 'odpojeno – zkouším znovu…';
+    setTimeout(connect, 2000);
+  };
+  ws.onerror   = () => ws.close();
+  window._ws = ws;
+}
+connect();
+
+// ── klávesnice pro přepínání modulů ──────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'f6') mod = (mod+1) % MODS.length;
+  if (e.key === 'ArrowLeft'  || e.key === 'f5') mod = (mod-1+MODS.length) % MODS.length;
+  document.querySelectorAll('.tab').forEach(t =>
+    t.classList.toggle('active', +t.dataset.i === mod));
+});
+
+// ── utiliy kreslení ───────────────────────────────────────────────────────────
+function clr(alpha=1, hue=145, sat=100, lgt=50) {
+  return `hsla(${hue},${sat}%,${lgt}%,${alpha})`;
+}
+const GREEN  = '#00ff80';
+const CYAN   = '#4dc3ff';
+const YELLOW = '#ffe040';
+const RED    = '#ff5050';
+const DIM    = '#1a3a28';
+
+function clear() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(0,0,0,0.85)';
+  ctx.fillRect(0, 0, W, H);
+}
+
+function text(str, x, y, { size=14, color=GREEN, align='left', bold=false }={}) {
+  ctx.font = `${bold?'bold ':' '}${size}px 'Courier New'`;
+  ctx.fillStyle = color;
+  ctx.textAlign = align;
+  ctx.fillText(str, x, y);
+}
+
+function line(x1,y1,x2,y2, color=DIM, w=1) {
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2);
+  ctx.strokeStyle = color; ctx.lineWidth = w; ctx.stroke();
+}
+
+function circle(x,y,r, stroke=GREEN, fill='', w=1.5) {
+  ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+  if (fill) { ctx.fillStyle=fill; ctx.fill(); }
+  ctx.strokeStyle=stroke; ctx.lineWidth=w; ctx.stroke();
+}
+
+// ── Modul 0: GAZE – živý crosshair sledující pohyb hlavy ─────────────────────
+function drawGaze() {
+  const FOV  = 50.0;                         // ar_disp_fov
+  const ppd  = W / FOV;                      // px na stupeň
+  const cx   = W/2 - data.yaw   * ppd;      // hlava doprava → kurzor doleva
+  const cy   = H/2 + data.pitch * ppd;
+
+  // grid – jemné čáry
+  ctx.globalAlpha = 0.12;
+  for (let x = W/2 % 80; x < W; x += 80) line(x, 0, x, H, GREEN);
+  for (let y = H/2 % 80; y < H; y += 80) line(0, y, W, y, GREEN);
+  ctx.globalAlpha = 1;
+
+  // horizontální / vertikální dělicí čáry středem
+  line(0, H/2, W, H/2, DIM);
+  line(W/2, 0, W/2, H, DIM);
+
+  // crosshair – tečkovaný
+  const ARM = 40, GAP = 14, RIN = 10;
+  const col = data.calibrating ? YELLOW : GREEN;
+  ctx.setLineDash([4,4]);
+  line(cx-ARM, cy, cx-GAP, cy, col, 1.5);
+  line(cx+GAP, cy, cx+ARM, cy, col, 1.5);
+  line(cx, cy-ARM, cx, cy-GAP, col, 1.5);
+  line(cx, cy+GAP, cx, cy+ARM, col, 1.5);
+  ctx.setLineDash([]);
+
+  // střed – kroužek
+  const pulsR = RIN + 2*Math.sin(Date.now()/300);
+  circle(cx, cy, pulsR, col, '', 2);
+  circle(cx, cy, 3, col, col);
+
+  // úhly
+  const yStr   = `H  ${data.yaw   >= 0 ? '+' : ''}${data.yaw.toFixed(2)}°`;
+  const pStr   = `V  ${data.pitch >= 0 ? '+' : ''}${data.pitch.toFixed(2)}°`;
+  text(yStr, cx + 24, cy - 14, { color: col, size: 13 });
+  text(pStr, cx + 24, cy +  4, { color: col, size: 13 });
+
+  // Hz + stav – vlevo dole
+  const hzCol = data.hz > 50 ? GREEN : data.hz > 20 ? YELLOW : RED;
+  text(`${data.hz.toFixed(0)} Hz`, 24, H-52, { color: hzCol, size: 13 });
+  text(data.status, 24, H-32, { color: DIM, size: 12 });
+
+  // piny jako tečky (world-locked – posunuty jako crosshair)
+  const pins = data.pins || [];
+  for (const [wh, wv, lbl, col2] of pins) {
+    const px = W/2 - wh * ppd;
+    const py = H/2 + wv * ppd;
+    ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI*2);
+    ctx.strokeStyle = col2 || CYAN; ctx.lineWidth = 2; ctx.stroke();
+    text(lbl || '', px+10, py-6, { color: col2||CYAN, size: 12 });
+  }
+
+  // polygon přes piny
+  if (pins.length >= 3) {
+    ctx.beginPath();
+    for (let i=0; i<pins.length; i++) {
+      const px = W/2 - pins[i][0]*ppd;
+      const py = H/2 + pins[i][1]*ppd;
+      i===0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(0,255,128,0.08)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,255,128,0.4)';
+    ctx.lineWidth = 1.5; ctx.stroke();
+  }
+}
+
+// ── Modul 1: INFO ─────────────────────────────────────────────────────────────
+function drawInfo() {
+  const cx = W/2, cy = H/2;
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2,'0');
+  const mm = String(now.getMinutes()).padStart(2,'0');
+  const ss = String(now.getSeconds()).padStart(2,'0');
+  const dni = ['neděle','pondělí','úterý','středa','čtvrtek','pátek','sobota'];
+
+  text(`${hh}:${mm}:${ss}`, cx, cy - 20,
+       { size: 88, color: GREEN, align:'center', bold:true });
+  text(`${dni[now.getDay()]}  ${now.getDate()}. ${now.getMonth()+1}. ${now.getFullYear()}`,
+       cx, cy + 56, { size: 22, color: '#5a8a6a', align:'center' });
+
+  line(W/2-200, cy+80, W/2+200, cy+80, DIM);
+
+  text(`IMU  ${data.hz.toFixed(0)} Hz    yaw ${data.yaw.toFixed(1)}°    pitch ${data.pitch.toFixed(1)}°`,
+       cx, cy+108, { size: 13, color: DIM, align:'center' });
+}
+
+// ── Modul 2: PINY ─────────────────────────────────────────────────────────────
+function drawPins() {
+  const pins = data.pins || [];
+  text('AR PINY', W/2, 60, { size: 20, color: CYAN, align:'center', bold:true });
+  line(80, 80, W-80, 80, DIM);
+
+  if (!pins.length) {
+    text('žádné piny  (F3 = přidat)', W/2, H/2,
+         { size: 16, color: DIM, align:'center' });
+    return;
+  }
+  let y = 120;
+  pins.forEach(([wh, wv, lbl, col], i) => {
+    const marker = `●  ${lbl || '#'+i}`;
+    text(marker, 100, y, { size: 18, color: col||CYAN });
+    text(`H ${wh>=0?'+':''}${wh.toFixed(2)}°   V ${wv>=0?'+':''}${wv.toFixed(2)}°`,
+         320, y, { size: 14, color: '#3a7a5a' });
+    y += 44;
+  });
+}
+
+// ── tab bar ───────────────────────────────────────────────────────────────────
+function drawTabs() {
+  const n = MODS.length;
+  const sw = 140, sh = 28;
+  const x0 = W/2 - (n*sw)/2;
+  const y0 = H - 44;
+  MODS.forEach((label, i) => {
+    const x = x0 + i*sw + sw/2;
+    const active = i === mod;
+    if (active) {
+      ctx.fillStyle = CYAN;
+      ctx.fillRect(x-sw/2+8, y0, sw-16, sh);
+    }
+    text(label, x, y0+18,
+         { size: 12, color: active ? '#000' : DIM, align:'center', bold:active });
+  });
+}
+
+// ── hlavní smyčka ──────────────────────────────────────────────────────────────
+function frame() {
+  clear();
+  if      (mod === 0) drawGaze();
+  else if (mod === 1) drawInfo();
+  else if (mod === 2) drawPins();
+  drawTabs();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

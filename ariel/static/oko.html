@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ariel – kontrola zraku</title>
+<!--
+  Domaci orientacni kontrola zraku pro XREAL One Pro v rezimu Full SBS (3840x1080).
+  Kazde oko dostane vlastni obraz, takze se da testovat jedno oko a druhe vidi jen tmu.
+  Spusteni: oko.bat (otevre stranku pres celou plochu bryli). Na monitoru: oko.html?sbs=0.
+  Vysledky se ukladaji do localStorage prohlizece (profil %LOCALAPPDATA%\ariel-oko-profile),
+  zaloha: Historie -> E = export do JSON, I = import.
+  NENI to lekarske vysetreni.
+-->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #000; overflow: hidden; cursor: none;
+               font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif; color: #e6e6e6;
+               user-select: none; }
+  .eye { position: fixed; top: 0; height: 100%; overflow: hidden; background: #000; }
+  .canvas { position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px;
+            transform-origin: 50% 50%; overflow: hidden; }
+  .page { position: absolute; left: 280px; right: 280px; top: 110px; bottom: 120px; }
+  h1 { font-size: 62px; font-weight: 300; margin-bottom: 30px; color: #f2f2f2; letter-spacing: -.5px; }
+  h2 { font-size: 40px; font-weight: 400; margin: 6px 0 14px; color: #e8e8e8; }
+  p { font-size: 36px; font-weight: 300; line-height: 1.42; color: #c4c4c4; margin-bottom: 18px; }
+  .sm { font-size: 30px; }
+  .muted { color: #858585; } .acc { color: #8cc4f0; } .warn { color: #e3bf6a; } .good { color: #8fd19e; }
+  .bad { color: #e88a7a; }
+  .foot { position: absolute; left: 280px; right: 280px; bottom: 54px; font-size: 28px; color: #7d7d7d;
+          font-weight: 300; }
+  .top { position: absolute; left: 280px; right: 280px; top: 46px; font-size: 28px; color: #7d7d7d;
+         font-weight: 300; display: flex; justify-content: space-between; }
+  .it { font-size: 42px; font-weight: 300; padding: 9px 26px; border-left: 4px solid transparent;
+        color: #b8b8b8; white-space: nowrap; }
+  .it.on { border-left-color: #8cc4f0; color: #fff; background: rgba(140,196,240,.07); }
+  .it small { font-size: 27px; color: #757575; margin-left: 18px; }
+  .hint { position: absolute; left: 0; right: 0; text-align: center; font-size: 30px; color: #7a7a7a;
+          font-weight: 300; }
+  .row { display: flex; gap: 40px; align-items: baseline; }
+  .res { font-size: 38px; font-weight: 300; margin: 4px 0 6px; }
+  .key { display: inline-block; border: 1px solid #555; border-radius: 6px; padding: 0 10px; color: #bbb;
+         font-size: .9em; }
+  svg { display: block; }
+  .reader { position: absolute; left: 230px; top: 150px; width: 1460px; font-size: 34px; line-height: 1.75;
+            font-weight: 300; color: #bdbdbd; }
+  .reader p { font-size: inherit; color: inherit; margin-bottom: 26px; line-height: inherit; }
+  .reader .w.g { color: #fff; }
+  .lensbox { position: absolute; inset: 0; pointer-events: none; }
+  .lensbox .reader { color: #fff; font-weight: 400; }
+</style>
+</head>
+<body>
+<div class="eye" id="eyeL"><div class="canvas"></div></div>
+<div class="eye" id="eyeR"><div class="canvas"></div></div>
+<script>
+'use strict';
+// ════════════ zaklad: rozlozeni oci ════════════
+const Q = new URLSearchParams(location.search);
+let SBS = Q.has('sbs') ? Q.get('sbs') === '1' : null;
+const eyeL = document.getElementById('eyeL'), eyeR = document.getElementById('eyeR');
+const cvL = eyeL.firstElementChild, cvR = eyeR.firstElementChild;
+let isSBS = true, scale = 1, EW = 1920;
+function layout() {
+  const w = innerWidth, h = innerHeight;
+  isSBS = SBS === null ? w / h > 2.6 : SBS;
+  EW = isSBS ? w / 2 : w;
+  eyeL.style.left = '0'; eyeL.style.width = EW + 'px';
+  eyeR.style.display = isSBS ? 'block' : 'none';
+  eyeR.style.left = EW + 'px'; eyeR.style.width = EW + 'px';
+  scale = Math.min(EW / 1920, h / 1080);
+  for (const c of [cvL, cvR]) c.style.transform = `translate(-50%,-50%) scale(${scale})`;
+  paint();
+}
+addEventListener('resize', layout);
+
+// ════════════ ulozeni ════════════
+const LS = {
+  ok: true,
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { this.ok = false; return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { this.ok = false; return false; } },
+};
+const SET = Object.assign({ ppd: 38.6, eyes: 'RL' }, LS.get('oko.settings', {}));
+const saveSet = () => LS.set('oko.settings', SET);
+let RES = LS.get('oko.results', []);
+function saveResult(r) {
+  r.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  r.date = new Date().toISOString(); r.ppd = SET.ppd;
+  RES.push(r); LS.set('oko.results', RES);
+}
+const prevResult = (r) => { for (let i = RES.length - 1; i >= 0; i--) { const x = RES[i];
+  if (x.test === r.test && x.eye === r.eye && x.id !== r.id && x.date < r.date) return x; } return null; };
+
+// ════════════ pomocne ════════════
+const EYE = { R: 'pravé', L: 'levé', B: 'obě' };
+const EYE_UP = { R: 'PRAVÉ', L: 'LEVÉ' };
+const fmt = (x, d) => x.toFixed(d).replace('.', ',').replace('-', '−');
+const r1 = x => Math.round(x * 10) / 10;
+const r2 = x => Math.round(x * 100) / 100;
+const dateCz = iso => { const d = new Date(iso); return `${d.getDate()}. ${d.getMonth() + 1}. ${d.getFullYear()}`; };
+const timeCz = iso => { const d = new Date(iso); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
+const toLin = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+const toS = l => { l = Math.max(0, Math.min(1, l)); const v = l <= 0.0031308 ? l * 12.92 : 1.055 * Math.pow(l, 1 / 2.4) - 0.055; return Math.round(v * 255); };
+const rgb = (r, g, b) => `rgb(${r},${g},${b})`;
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const rand = (a, b) => a + Math.random() * (b - a);
+const eyesOrder = () => SET.eyes === 'RL' ? ['R', 'L'] : [SET.eyes];
+const plural = (n, a, b, c) => n === 1 ? a : (n >= 2 && n <= 4 ? b : c);
+
+function fixCross(color = '#9a9a9a', size = 26) {
+  const h = size / 2;
+  return `<svg class="abs" style="position:absolute;left:${960 - h}px;top:${540 - h}px" width="${size}" height="${size}">
+    <line x1="${h}" y1="2" x2="${h}" y2="${size - 2}" stroke="${color}" stroke-width="3"/>
+    <line x1="2" y1="${h}" x2="${size - 2}" y2="${h}" stroke="${color}" stroke-width="3"/></svg>`;
+}
+const hint = (y, text, color) => `<div class="hint" style="top:${y}px${color ? ';color:' + color : ''}">${text}</div>`;
+const DISCLAIMER = 'Domácí orientační sledování, ne lékařské vyšetření. Změny zraku konzultuj s očním lékařem.';
+
+// ════════════ zobrazeni ════════════
+let V = null, timers = [];
+const later = (ms, fn) => { const t = setTimeout(fn, ms); timers.push(t); return t; };
+function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+function show(v) { clearTimers(); if (V && V.leave) V.leave(); V = v; if (v.enter) v.enter(); paint(); }
+function paint() {
+  if (!V) return;
+  if (isSBS) { cvL.innerHTML = V.html('L'); cvR.innerHTML = V.html('R'); }
+  else cvL.innerHTML = V.html('M');
+  if (V.after) V.after();
+}
+
+// ════════════ TEST 1: zrakova ostrost (Landoltovo C) ════════════
+// velikost: logMAR x -> mezera 10^x uhlovych minut; cele C = 5 mezer
+function landolt(cx, cy, g, dir, fg, bg) {
+  const D = 5 * g, h = D / 2, ang = [0, 270, 180, 90][dir];   // 0 vpravo, 1 nahoru, 2 vlevo, 3 dolu
+  return `<svg style="position:absolute;left:${cx - h - 2}px;top:${cy - h - 2}px" width="${D + 4}" height="${D + 4}"
+     shape-rendering="geometricPrecision"><g transform="translate(2,2) rotate(${ang} ${h} ${h})">
+     <circle cx="${h}" cy="${h}" r="${2 * g}" fill="none" stroke="${fg}" stroke-width="${g}"/>
+     <rect x="${h}" y="${h - g / 2}" width="${h + 1}" height="${g}" fill="${bg}"/></g></svg>`;
+}
+const DIRKEY = { ArrowRight: 0, ArrowUp: 1, ArrowLeft: 2, ArrowDown: 3 };
+function newDirFn() { let last = -1; return () => { let d; do d = Math.floor(Math.random() * 4); while (d === last); last = d; return d; }; }
+
+function acuityTest(eye, done) {
+  const ppd = SET.ppd, maxL = 1.6;
+  const minL = Math.max(0, Math.ceil(Math.log10(60 / ppd) * 10 - 1e-6) / 10); // mezera aspon 1 pixel
+  const nd = newDirFn();
+  let phase = 'screen', L = 1.0, hits = 0, miss = 0, best = null, failed = {}, total = 0, dir = nd(), blank = false;
+  function finish() { done({ logmar: best, limit: best !== null && best <= minL + 1e-6, minL, n: total }); }
+  function answer(ok) {
+    total++;
+    if (phase === 'screen') {
+      if (ok && L > minL + 1e-6) L = r1(Math.max(minL, L - 0.2));
+      else { phase = 'lines'; if (!ok) L = r1(Math.min(maxL, L + 0.2)); hits = miss = 0; }
+    } else {
+      ok ? hits++ : miss++;
+      if (hits >= 3) {                                  // radek zvladnut (3 z 5)
+        best = L; hits = miss = 0;
+        if (L - 0.1 < minL - 1e-6 || failed[r1(L - 0.1)]) return finish();
+        L = r1(L - 0.1);
+      } else if (miss >= 3) {                           // radek nezvladnut
+        failed[L] = 1; hits = miss = 0;
+        if (best !== null || L >= maxL - 1e-6) return finish();
+        L = r1(L + 0.1);
+      }
+    }
+    dir = nd(); blank = true; paint();
+    later(350, () => { blank = false; paint(); });
+  }
+  return {
+    html(side) {
+      const mine = side === eye || side === 'M';
+      let s = hint(60, 'Kam míří mezera v kroužku? &nbsp;← ↑ → ↓ &nbsp;&nbsp;·&nbsp;&nbsp; mezerník = nevidím');
+      s += hint(990, `měří se ${EYE[eye]} oko · Esc = konec`, '#555');
+      if (mine && !blank) s += landolt(960, 540, Math.pow(10, L) * ppd / 60, dir, '#f0f0f0', '#000');
+      return s;
+    },
+    key(e) {
+      if (blank) return;
+      if (e.key in DIRKEY) answer(DIRKEY[e.key] === dir);
+      else if (e.key === ' ') answer(false);
+    },
+  };
+}
+
+// ════════════ TEST 2: kontrastni citlivost ════════════
+const CS_BG = 180;
+function contrastLevels() {
+  const Lbg = toLin(CS_BG), out = [];
+  for (let x = 0; x <= 2.251; x += 0.15) {
+    const c = Math.pow(10, -x), t = toS(Lbg * (1 - c));
+    if (t >= CS_BG) break;
+    out.push({ x: r2(x), t, real: 1 - toLin(t) / Lbg });
+  }
+  return out;
+}
+function contrastTest(eye, done) {
+  const lv = contrastLevels(), g = SET.ppd * 3 / 5;    // C velke 3 stupne
+  const nd = newDirFn();
+  let i = 0, hits = 0, miss = 0, best = null, dir = nd(), blank = false, n = 0;
+  function finish(limit) { done({ logcs: best, limit: !!limit, maxX: lv[lv.length - 1].x, n }); }
+  function answer(ok) {
+    n++; ok ? hits++ : miss++;
+    if (hits >= 2) { best = lv[i].x; hits = miss = 0; i++; if (i >= lv.length) return finish(true); }
+    else if (miss >= 2) return finish(false);
+    dir = nd(); blank = true; paint();
+    later(400, () => { blank = false; paint(); });
+  }
+  return {
+    html(side) {
+      const mine = side === eye || side === 'M', bg = rgb(CS_BG, CS_BG, CS_BG);
+      let s = mine ? `<div style="position:absolute;inset:0;background:${bg}"></div>` : '';
+      const hc = mine ? '#6a6a6a' : '#7a7a7a';
+      s += hint(60, 'Kam míří mezera? &nbsp;← ↑ → ↓ &nbsp;&nbsp;·&nbsp;&nbsp; mezerník = nevidím', hc);
+      s += hint(990, `měří se ${EYE[eye]} oko · Esc = konec`, mine ? '#888' : '#555');
+      if (mine && !blank) { const t = lv[i].t; s += landolt(960, 540, g, dir, rgb(t, t, t), bg); }
+      return s;
+    },
+    key(e) {
+      if (blank) return;
+      if (e.key in DIRKEY) answer(DIRKEY[e.key] === dir);
+      else if (e.key === ' ') answer(false);
+    },
+  };
+}
+
+// ════════════ TEST 3: Amslerova mrizka ════════════
+function amslerTest(eye, done) {
+  const N = 20, cell = SET.ppd, size = N * cell, x0 = 960 - size / 2, y0 = 540 - size / 2;
+  let cx = 10, cy = 10; const marks = new Set();
+  return {
+    html(side) {
+      const mine = side === eye || side === 'M';
+      let s = hint(48, 'Dívej se jen na tečku uprostřed. Jsou všechny čáry rovné a vidíš všechna políčka?');
+      s += hint(960, 'šipky = posun &nbsp;·&nbsp; mezerník nebo klik = označit zvlněné / rozmazané / chybějící místo &nbsp;·&nbsp; Enter = hotovo', '#666');
+      s += hint(1010, `${EYE[eye]} oko · bez označení = vše v pořádku · Backspace = smazat značky`, '#555');
+      if (!mine) return s;
+      let g = `<svg style="position:absolute;left:0;top:0" width="1920" height="1080">`;
+      for (const k of marks) { const [a, b] = k.split(',').map(Number);
+        g += `<rect x="${x0 + a * cell}" y="${y0 + b * cell}" width="${cell}" height="${cell}" fill="rgba(227,191,106,.38)"/>`; }
+      for (let k = 0; k <= N; k++) {
+        const w = (k === 0 || k === N) ? 3 : 1.6;
+        g += `<line x1="${x0 + k * cell}" y1="${y0}" x2="${x0 + k * cell}" y2="${y0 + size}" stroke="#d8d8d8" stroke-width="${w}"/>`;
+        g += `<line x1="${x0}" y1="${y0 + k * cell}" x2="${x0 + size}" y2="${y0 + k * cell}" stroke="#d8d8d8" stroke-width="${w}"/>`;
+      }
+      g += `<circle cx="960" cy="540" r="7" fill="#fff"/>`;
+      g += `<rect x="${x0 + cx * cell + 2}" y="${y0 + cy * cell + 2}" width="${cell - 4}" height="${cell - 4}" fill="none" stroke="#e3bf6a" stroke-width="3"/>`;
+      return s + g + '</svg>';
+    },
+    key(e) {
+      const k = e.key;
+      if (k === 'ArrowLeft') cx = Math.max(0, cx - 1);
+      else if (k === 'ArrowRight') cx = Math.min(N - 1, cx + 1);
+      else if (k === 'ArrowUp') cy = Math.max(0, cy - 1);
+      else if (k === 'ArrowDown') cy = Math.min(N - 1, cy + 1);
+      else if (k === ' ') { const id = cx + ',' + cy; marks.has(id) ? marks.delete(id) : marks.add(id); }
+      else if (k === 'Backspace') marks.clear();
+      else if (k === 'Enter') return done({ marks: [...marks], count: marks.size, n: N });
+      else return;
+      paint();
+    },
+    mouse(x, y, type) {
+      const a = Math.floor((x - x0) / cell), b = Math.floor((y - y0) / cell);
+      if (a < 0 || b < 0 || a >= N || b >= N) return;
+      cx = a; cy = b;
+      if (type === 'click') { const id = a + ',' + b; marks.has(id) ? marks.delete(id) : marks.add(id); }
+      paint();
+    },
+  };
+}
+
+// ════════════ TEST 4+5: srovnani oci (sytost cervene, jas) ════════════
+function diskColor(kind, k) {
+  if (kind === 'red') {
+    const c = [210, 35, 35].map(toLin), Y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    const m = c.map(v => (1 - k) * v + k * Y);        // stejny jas, mene barvy
+    return rgb(...m.map(toS));
+  }
+  const v = toS(toLin(205) * (1 - k)); return rgb(v, v, v);
+}
+function compareTest(kind, done) {
+  const R = SET.ppd * 3.5, off = SET.ppd * 7;
+  let run = 0, b = 0, runs = [], msg = '';
+  const reset = () => { b = (Math.random() < .5 ? -1 : 1) * (20 + 2 * Math.floor(Math.random() * 11)); };
+  reset();
+  const sideOf = E => (run === 0) === (E === 'L') ? -1 : 1;      // -1 vlevo, +1 vpravo
+  const redOf = E => { const sd = sideOf(E); return (sd < 0 && b < 0) ? -b / 100 : (sd > 0 && b > 0) ? b / 100 : 0; };
+  const word = kind === 'red' ? 'sytější (červenější)' : 'jasnější';
+  return {
+    html(side) {
+      if (side === 'M') return `<div class="page"><h1>Potřebuje brýle v režimu SBS</h1><p>Tento test ukazuje každému oku jiný kotouč. Na monitoru nejde. Esc = zpět.</p></div>`;
+      let s = hint(60, `Dívej se na křížek. Šipkou ← nebo → uber barvu tomu kotouči, který je ${word}.`);
+      s += hint(110, 'Enter = oba vypadají stejně', '#666');
+      s += hint(990, `kolo ${run + 1} ze 2 · Esc = konec`, '#555');
+      if (msg) return s + hint(520, msg, '#9a9a9a');
+      s += fixCross();
+      const x = 960 + sideOf(side) * off;
+      s += `<div style="position:absolute;left:${x - R}px;top:${540 - R}px;width:${2 * R}px;height:${2 * R}px;border-radius:50%;background:${diskColor(kind, redOf(side))}"></div>`;
+      return s;
+    },
+    key(e) {
+      if (msg) return;
+      const st = e.shiftKey ? 6 : 2;
+      if (e.key === 'ArrowLeft') b = Math.max(-90, b - st);
+      else if (e.key === 'ArrowRight') b = Math.min(90, b + st);
+      else if (e.key === 'Enter') {
+        const kL = redOf('L'), kR = redOf('R');
+        runs.push({ kL, kR, rel: (1 - kR) / (1 - kL) });
+        if (++run >= 2) {
+          const relL = Math.exp(runs.reduce((a, r) => a + Math.log(r.rel), 0) / runs.length);
+          return done({ relL, runs });
+        }
+        reset(); msg = 'Druhé kolo: kotouče si vymění strany.'; paint();
+        later(1800, () => { msg = ''; paint(); });
+        return;
+      } else return;
+      paint();
+    },
+  };
+}
+
+// ════════════ TEST 6: zorne pole (orientacni) ════════════
+function fieldPoints() {
+  const p = [];
+  for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; p.push([3 * Math.cos(a), 3 * Math.sin(a)]); }
+  for (let k = 0; k < 8; k++) { const a = (k + .5) * Math.PI / 4; p.push([7 * Math.cos(a), 7 * Math.sin(a)]); }
+  for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; p.push([12 * Math.cos(a), 11 * Math.sin(a)]); }
+  p.push([20, 0], [-20, 0], [18, 8], [18, -8], [-18, 8], [-18, -8]);
+  return p.map(([x, y]) => [r1(x), r1(y)]);
+}
+const FIELD_DIM = 105, FIELD_BRIGHT = 255;
+function fieldTest(eye, done) {
+  const ppd = SET.ppd, pts = fieldPoints(), sg = eye === 'L' ? -1 : 1;
+  const blind = [15 * sg, 1.5];
+  const status = pts.map(() => 'miss');
+  let trials = shuffle([...pts.map((_, i) => ({ k: 'pt', i, lvl: FIELD_DIM })),
+    { k: 'blind' }, { k: 'blind' }, { k: 'blind' }, { k: 'blank' }, { k: 'blank' }, { k: 'blank' }]);
+  let idx = 0, retest = false, stim = null, open = null, fp = 0, fl = 0, total = trials.length, doneN = 0, started = false;
+  const R = Math.max(5, ppd * 0.25);
+  function step() {
+    if (idx >= trials.length) {
+      if (!retest) {
+        retest = true; idx = 0;
+        trials = shuffle(pts.map((_, i) => i).filter(i => status[i] === 'miss').map(i => ({ k: 'pt', i, lvl: FIELD_BRIGHT })));
+        total += trials.length;
+        if (trials.length) return later(rand(1100, 1900), step);
+      }
+      return done({ pts, status, fl, flN: 3, fp, eyeSign: sg });
+    }
+    const t = trials[idx++];
+    open = t; doneN++;
+    if (t.k === 'pt') stim = { x: pts[t.i][0], y: pts[t.i][1], lvl: t.lvl };
+    else if (t.k === 'blind') stim = { x: blind[0], y: blind[1], lvl: FIELD_BRIGHT };
+    else stim = null;
+    paint();
+    later(200, () => { stim = null; paint(); });
+    later(1350, () => { open = null; later(rand(500, 1300), step); });
+  }
+  return {
+    clickSpace: true,
+    enter() { later(1800, () => { started = true; step(); }); },
+    html(side) {
+      const mine = side === eye || side === 'M';
+      let s = hint(56, 'Dívej se pořád na křížek. Když kdekoli zahlédneš bod, zmáčkni mezerník.');
+      s += hint(1000, `${EYE[eye]} oko · ${Math.min(doneN, total)} / ${total} · Esc = konec`, '#555');
+      s += fixCross('#a8a8a8');
+      if (mine && stim) { const v = stim.lvl;
+        s += `<div style="position:absolute;left:${960 + stim.x * ppd - R}px;top:${540 + stim.y * ppd - R}px;width:${2 * R}px;height:${2 * R}px;border-radius:50%;background:${rgb(v, v, v)}"></div>`; }
+      return s;
+    },
+    key(e) {
+      if (e.key !== ' ' || !started) return;
+      if (!open) { fp++; return; }
+      const t = open; open = null;
+      if (t.k === 'pt') status[t.i] = t.lvl === FIELD_DIM ? 'dim' : 'bright';
+      else if (t.k === 'blind') fl++;
+      else fp++;
+    },
+  };
+}
+function fieldMap(r, w = 620) {
+  const k = w / 46, h = 30 * k, cx = w / 2, cy = h / 2;
+  const col = { dim: '#8fd19e', bright: '#e3bf6a', miss: '#e06b5a' };
+  let s = `<svg width="${w}" height="${h + 40}"><rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="14" fill="none" stroke="#333"/>`;
+  s += `<line x1="${cx}" y1="8" x2="${cx}" y2="${h - 8}" stroke="#2a2a2a"/><line x1="8" y1="${cy}" x2="${w - 8}" y2="${cy}" stroke="#2a2a2a"/>`;
+  s += `<circle cx="${cx + 15 * r.eyeSign * k}" cy="${cy + 1.5 * k}" r="${2 * k}" fill="none" stroke="#555" stroke-dasharray="4 4"/>`;
+  r.pts.forEach(([x, y], i) => { s += `<circle cx="${cx + x * k}" cy="${cy + y * k}" r="${0.9 * k}" fill="${col[r.status[i]]}"/>`; });
+  const noseLeft = r.eyeSign > 0;
+  s += `<text x="12" y="${h + 30}" fill="#777" font-size="24">${noseLeft ? 'u nosu' : 'u spánku'}</text>`;
+  s += `<text x="${w - 12}" y="${h + 30}" fill="#777" font-size="24" text-anchor="end">${noseLeft ? 'u spánku' : 'u nosu'}</text>`;
+  return s + '</svg>';
+}
+
+// ════════════ texty vysledku ════════════
+function acuityText(x) {
+  if (x.logmar === null) return 'horší než 1,6 logMAR (jen velmi velké znaky)';
+  const dec = Math.pow(10, -x.logmar);
+  return `${fmt(x.logmar, 1)} logMAR · vízus ≈ ${fmt(dec, dec < 0.1 ? 2 : 1)}${x.limit ? ' <span class="muted">(menší znaky displej neukáže)</span>' : ''}`;
+}
+function relText(rel, kind) {
+  const what = kind === 'red' ? 'červenou' : 'jas';
+  if (Math.abs(Math.log(rel)) < 0.05) return `obě oči vnímají ${what} zhruba stejně`;
+  return rel < 1 ? `levé oko vnímá ${what} slaběji: asi ${Math.round(rel * 100)} % pravého`
+                 : `pravé oko vnímá ${what} slaběji: asi ${Math.round(100 / rel)} % levého`;
+}
+function resultText(r) {
+  if (r.test === 'acuity') return acuityText(r);
+  if (r.test === 'contrast') return r.logcs === null ? 'nerozezná ani nejsilnější kontrast'
+    : `${fmt(r.logcs, 2)} log CS${r.limit ? ' <span class="muted">(víc displej neumí)</span>' : ''}`;
+  if (r.test === 'amsler') return r.count === 0 ? 'bez označených míst' : `${r.count} ${plural(r.count, 'označené políčko', 'označená políčka', 'označených políček')}`;
+  if (r.test === 'red' || r.test === 'bright') return relText(r.relL, r.test);
+  if (r.test === 'field') {
+    const c = s => r.status.filter(x => x === s).length;
+    return `viděno ${c('dim')} z ${r.pts.length} slabých bodů, ${c('bright')} až silnější, ${c('miss')} vůbec`;
+  }
+  return '';
+}
+function reliability(r) {
+  if (r.test !== 'field') return '';
+  const bad = r.fl >= 2 || r.fp >= 3;
+  return `<span class="${bad ? 'warn' : 'muted'}">spolehlivost: slepá skvrna viděna ${r.fl}/3×, falešná zmáčknutí ${r.fp}${bad ? ' · výsledek ber s rezervou, zkus znovu' : ''}</span>`;
+}
+function compareText(r) {
+  const p = prevResult(r); if (!p) return '<span class="muted">první měření</span>';
+  const when = `minule ${dateCz(p.date)}`;
+  if (r.test === 'acuity') {
+    if (r.logmar === null || p.logmar === null) return `<span class="muted">${when}: ${acuityText(p)}</span>`;
+    const d = Math.round((p.logmar - r.logmar) * 10);
+    if (d === 0) return `<span class="muted">${when}: beze změny</span>`;
+    const n = Math.abs(d), w = plural(n, 'řádek', 'řádky', 'řádků');
+    return d > 0 ? `<span class="good">o ${n} ${w} lépe než ${when.replace('minule ', '')}</span>`
+                 : `<span class="warn">o ${n} ${w} hůře než ${when.replace('minule ', '')}</span>`;
+  }
+  if (r.test === 'contrast') {
+    if (r.logcs === null || p.logcs === null) return `<span class="muted">${when}: ${resultText(p)}</span>`;
+    const d = Math.round((r.logcs - p.logcs) / 0.15);
+    if (d === 0) return `<span class="muted">${when}: beze změny</span>`;
+    return d > 0 ? `<span class="good">o ${d} ${plural(d, 'stupeň', 'stupně', 'stupňů')} lépe (${when})</span>`
+                 : `<span class="warn">o ${-d} ${plural(-d, 'stupeň', 'stupně', 'stupňů')} hůře (${when})</span>`;
+  }
+  return `<span class="muted">${when}: ${resultText(p)}</span>`;
+}
+
+// ════════════ seznam testu ════════════
+const TESTS = {
+  acuity:   { name: 'Zraková ostrost', sub: 'kroužky s mezerou, každé oko zvlášť', perEye: true, make: acuityTest,
+    how: ['Uprostřed se objeví kroužek s mezerou. Šipkou ukaž, kam mezera míří.',
+          'Když si nejsi jistý, odhadni. Když nevidíš nic, zmáčkni mezerník. Kroužky se postupně zmenšují.'] },
+  contrast: { name: 'Kontrastní citlivost', sub: 'bledé kroužky na šedé', perEye: true, make: contrastTest,
+    how: ['Kroužky zůstávají velké, ale postupně blednou až skoro splynou s šedým pozadím.',
+          'Ovládání je stejné: šipka podle mezery, mezerník = nevidím.'] },
+  amsler:   { name: 'Amslerova mřížka', sub: 'zvlnění a výpadky ve středu', perEye: true, make: amslerTest,
+    how: ['Dívej se jen na tečku uprostřed mřížky, oči nepřesouvej.',
+          'Pokud jsou někde čáry zvlněné, rozmazané, tmavší nebo chybí, označ ta políčka. Enter = hotovo.'] },
+  red:      { name: 'Sytost červené', sub: 'srovnání obou očí', perEye: false, make: (e, d) => compareTest('red', d),
+    how: ['Každé oko uvidí jeden červený kotouč, dohromady vedle sebe. Dívej se na křížek mezi nimi.',
+          'Šipkou uber barvu tomu, který je sytější, dokud nebudou stejné. Udělá se to dvakrát se stranami prohozenými.'] },
+  bright:   { name: 'Jas', sub: 'srovnání obou očí', perEye: false, make: (e, d) => compareTest('bright', d),
+    how: ['Stejné jako u červené, jen kotouče jsou bílé a porovnává se jas.',
+          'Šipkou ztlum ten jasnější, Enter až vypadají stejně.'] },
+  field:    { name: 'Zorné pole', sub: 'orientační, asi 2 minuty na oko', perEye: true, make: fieldTest,
+    how: ['Celou dobu se dívej na křížek uprostřed. Na různých místech krátce bliknou body.',
+          'Když bod zahlédneš, zmáčkni mezerník. Občas se schválně neukáže nic nebo bod padne do slepé skvrny, tím se hlídá spolehlivost.'] },
+};
+const ORDER = ['acuity', 'contrast', 'amsler', 'red', 'bright', 'field'];
+
+// ════════════ beh testu ════════════
+function runQueue(ids) {
+  const steps = [];
+  for (const id of ids) { const t = TESTS[id];
+    if (t.perEye) for (const e of eyesOrder()) steps.push({ id, t, eye: e }); else steps.push({ id, t, eye: 'B' }); }
+  let i = 0; const results = [];
+  const next = () => {
+    if (i >= steps.length) return show(resultView(results));
+    const st = steps[i++];
+    show(introView(st, i, steps.length, () => show(st.t.make(st.eye, r => {
+      r.test = st.id; r.eye = st.eye; saveResult(r); results.push(r); next(); })), next));
+  };
+  next();
+}
+function introView(st, n, total, start, skip) {
+  return {
+    html(side) {
+      const sbsOnly = !st.t.perEye && side === 'M';
+      const eyeLine = st.eye === 'B' ? 'Měří se obě oči najednou, každé vidí svůj kotouč.'
+        : (side === 'M' ? `Měří se <b>${EYE_UP[st.eye]}</b> oko. Brýle nejsou v režimu SBS, takže druhé oko zakryj dlaní.`
+                        : `Měří se <b>${EYE_UP[st.eye]}</b> oko. Druhé oko nech otevřené, uvidí jen tmu.`);
+      return `<div class="top"><span>${n} / ${total}</span><span>Esc = zpět do nabídky</span></div>
+        <div class="page"><h1>${st.t.name}</h1>
+        <p class="acc">${eyeLine}</p>${st.t.how.map(x => `<p>${x}</p>`).join('')}
+        ${sbsOnly ? '<p class="warn">Tento test potřebuje brýle v režimu Full SBS. Enter = přeskočit.</p>' : ''}</div>
+        <div class="foot">Enter = začít${total > 1 ? ' · Tab = přeskočit' : ''}</div>`;
+    },
+    key(e) {
+      if (e.key === 'Enter') (!st.t.perEye && !isSBS) ? skip() : start();
+      else if (e.key === 'Tab') skip();
+    },
+  };
+}
+function resultView(results) {
+  return {
+    html() {
+      if (!results.length) return `<div class="page"><h1>Bez výsledků</h1></div><div class="foot">Enter = nabídka</div>`;
+      let s = `<div class="page"><h1>Výsledky</h1>`;
+      for (const r of results.slice(-6)) {
+        s += `<h2>${TESTS[r.test].name}${r.eye !== 'B' ? ' · ' + EYE[r.eye] + ' oko' : ''}</h2>`;
+        s += `<div class="res">${resultText(r)}</div><p class="sm">${compareText(r)}${r.test === 'field' ? '<br>' + reliability(r) : ''}</p>`;
+      }
+      if (!LS.ok) s += `<p class="warn sm">Pozor: prohlížeč neumí ukládat, výsledky se ztratí.</p>`;
+      return s + `</div><div class="foot">${DISCLAIMER}<br>Enter = nabídka · H = historie</div>`;
+    },
+    key(e) { if (e.key === 'Enter') show(menuView()); else if (e.key === 'h' || e.key === 'H') show(historyView()); },
+    globals: true,
+  };
+}
+
+// ════════════ nabidka ════════════
+let menuSel = 0;
+function menuView() {
+  const items = [
+    { name: 'Celá kontrola', sub: 'všechny testy za sebou, asi 15 minut', go: () => runQueue(ORDER) },
+    { name: 'Rychlá kontrola', sub: 'ostrost, kontrast, červená', go: () => runQueue(['acuity', 'contrast', 'red']) },
+    ...ORDER.map(id => ({ name: TESTS[id].name, sub: TESTS[id].sub, go: () => runQueue([id]) })),
+    { name: 'Čtení s lupou', sub: 'demo: zvětšení textu podle pohledu', go: () => show(readerView()) },
+    { name: 'Historie', sub: 'grafy a srovnání v čase', go: () => show(historyView()) },
+    { name: 'Nastavení a upozornění', sub: '', go: () => show(settingsView()) },
+  ];
+  return {
+    html() {
+      const eyeOpt = { RL: 'pravé, pak levé', R: 'jen pravé', L: 'jen levé' }[SET.eyes];
+      let s = `<div class="top"><span>Ariel · kontrola zraku</span><span>${isSBS ? 'brýle SBS' : 'monitor (bez SBS)'}</span></div>
+        <div class="page" style="top:96px"><div style="font-size:32px;color:#8a8a8a;margin:0 0 18px 30px">Oči: <span class="acc">${eyeOpt}</span> <span class="muted" style="font-size:26px">(← → změnit)</span></div>`;
+      items.forEach((it, i) => { s += `<div class="it${i === menuSel ? ' on' : ''}">${it.name}${it.sub ? `<small>${it.sub}</small>` : ''}</div>`; });
+      return s + `</div><div class="foot">${DISCLAIMER}</div>`;
+    },
+    key(e) {
+      if (e.key === 'ArrowDown') menuSel = (menuSel + 1) % items.length;
+      else if (e.key === 'ArrowUp') menuSel = (menuSel + items.length - 1) % items.length;
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const o = ['RL', 'R', 'L'], d = e.key === 'ArrowRight' ? 1 : 2;
+        SET.eyes = o[(o.indexOf(SET.eyes) + d) % 3]; saveSet();
+      }
+      else if (e.key === 'Enter') return items[menuSel].go();
+      else if (e.key === 'h' || e.key === 'H') return show(historyView());
+      else return;
+      paint();
+    },
+    globals: true, isMenu: true,
+  };
+}
+
+// ════════════ historie ════════════
+function chart(title, series, opt) {
+  const W = 1300, H = 230, padL = 120, padR = 30, padT = 46, padB = 34;
+  const all = series.flatMap(s => s.pts);
+  let s = `<svg width="${W}" height="${H}" style="margin-bottom:14px"><text x="0" y="30" fill="#cfcfcf" font-size="30" font-weight="300">${title}</text>`;
+  if (!all.length) return s + `<text x="${padL}" y="${H / 2 + 20}" fill="#666" font-size="26">zatím žádná data</text></svg>`;
+  const t0 = Math.min(...all.map(p => p.t)), t1 = Math.max(...all.map(p => p.t));
+  const X = t => t1 === t0 ? (padL + W - padR) / 2 : padL + (t - t0) / (t1 - t0) * (W - padL - padR);
+  const Y = v => { const f = (v - opt.min) / (opt.max - opt.min); return padT + (opt.invert ? f : 1 - f) * (H - padT - padB); };
+  for (const g of opt.grid) s += `<line x1="${padL}" x2="${W - padR}" y1="${Y(g)}" y2="${Y(g)}" stroke="#262626"/>
+      <text x="${padL - 14}" y="${Y(g) + 9}" fill="#6a6a6a" font-size="22" text-anchor="end">${opt.label(g)}</text>`;
+  for (const se of series) {
+    if (!se.pts.length) continue;
+    s += `<polyline fill="none" stroke="${se.color}" stroke-width="3" points="${se.pts.map(p => X(p.t) + ',' + Y(p.v)).join(' ')}"/>`;
+    for (const p of se.pts) s += `<circle cx="${X(p.t)}" cy="${Y(p.v)}" r="7" fill="${se.color}"/>`;
+  }
+  s += `<text x="${W - padR}" y="30" font-size="24" text-anchor="end">${series.map(se => `<tspan fill="${se.color}">● ${se.label}  </tspan>`).join('')}</text>`;
+  s += `<text x="${padL}" y="${H - 4}" fill="#5a5a5a" font-size="20">${dateCz(new Date(t0).toISOString())}</text>`;
+  if (t1 !== t0) s += `<text x="${W - padR}" y="${H - 4}" fill="#5a5a5a" font-size="20" text-anchor="end">${dateCz(new Date(t1).toISOString())}</text>`;
+  return s + `<text x="${padL - 14}" y="${H - 4}" fill="#5a5a5a" font-size="20" text-anchor="end">${opt.better}</text></svg>`;
+}
+const COL = { R: '#8cc4f0', L: '#e3bf6a' };
+function seriesFor(test, val) {
+  return ['R', 'L'].map(e => ({ label: EYE[e], color: COL[e],
+    pts: RES.filter(r => r.test === test && r.eye === e && val(r) !== null).map(r => ({ t: +new Date(r.date), v: val(r) })) }));
+}
+function historyView() {
+  let tab = 0, sel = 0, delArm = false, detail = null;
+  const list = () => RES.slice().reverse();
+  const tabs = ['Grafy', 'Seznam'];
+  return {
+    html() {
+      if (detail) {
+        const r = detail;
+        let s = `<div class="page"><h1>${TESTS[r.test].name}${r.eye !== 'B' ? ' · ' + EYE[r.eye] + ' oko' : ''}</h1>
+          <p class="muted sm">${dateCz(r.date)} ${timeCz(r.date)}</p><div class="res">${resultText(r)}</div><p class="sm">${reliability(r)}</p>`;
+        if (r.test === 'field') s += fieldMap(r, 760) + `<p class="sm muted">zeleně viděno slabé, žlutě až silné, červeně neviděno · čárkovaně slepá skvrna (normální)</p>`;
+        if (r.test === 'amsler') {
+          const c = 22, n = r.n || 20; let g = `<svg width="${c * n + 2}" height="${c * n + 2}">`;
+          for (const k of r.marks) { const [a, b] = k.split(',').map(Number); g += `<rect x="${1 + a * c}" y="${1 + b * c}" width="${c}" height="${c}" fill="rgba(227,191,106,.6)"/>`; }
+          for (let k = 0; k <= n; k++) g += `<line x1="${1 + k * c}" y1="1" x2="${1 + k * c}" y2="${1 + n * c}" stroke="#444"/><line x1="1" y1="${1 + k * c}" x2="${1 + n * c}" y2="${1 + k * c}" stroke="#444"/>`;
+          s += g + `<circle cx="${1 + n * c / 2}" cy="${1 + n * c / 2}" r="5" fill="#fff"/></svg>`;
+        }
+        if (r.runs) s += `<p class="sm muted">kola: ${r.runs.map(x => Math.round(x.rel * 100) + ' %').join(', ')} (levé vůči pravému)</p>`;
+        return s + `</div><div class="foot">Esc nebo Enter = zpět</div>`;
+      }
+      let s = `<div class="top"><span>${tabs.map((t, i) => `<span style="${i === tab ? 'color:#fff' : ''}">${t}</span>`).join(' &nbsp;·&nbsp; ')} <span style="font-size:24px">(← →)</span></span>
+        <span>${RES.length} ${plural(RES.length, 'záznam', 'záznamy', 'záznamů')}</span></div><div class="page" style="top:100px">`;
+      if (tab === 0) {
+        s += chart('Zraková ostrost (logMAR, nahoře lépe)', seriesFor('acuity', r => r.logmar),
+          { min: -0.1, max: 1.7, invert: true, grid: [0, 0.4, 0.8, 1.2, 1.6], label: v => fmt(v, 1), better: '' });
+        s += chart('Kontrastní citlivost (log CS)', seriesFor('contrast', r => r.logcs),
+          { min: 0, max: 2.1, grid: [0, 0.6, 1.2, 1.8], label: v => fmt(v, 1), better: '' });
+        const rs = (t, lbl, c) => ({ label: lbl, color: c, pts: RES.filter(r => r.test === t).map(r => ({ t: +new Date(r.date), v: Math.round(r.relL * 100) })) });
+        s += chart('Levé oko vůči pravému (%; 100 = stejné)', [rs('red', 'červená', '#e88a7a'), rs('bright', 'jas', '#bdbdbd')],
+          { min: 20, max: 180, grid: [50, 100, 150], label: v => v + ' %', better: '' });
+      } else {
+        const L = list(); if (!L.length) s += `<p class="muted">Zatím žádné výsledky.</p>`;
+        const first = Math.max(0, Math.min(sel - 4, L.length - 10));
+        L.slice(first, first + 10).forEach((r, j) => { const i = first + j;
+          s += `<div class="it${i === sel ? ' on' : ''}" style="font-size:31px">${dateCz(r.date)} &nbsp;${TESTS[r.test].name}${r.eye !== 'B' ? ' · ' + EYE[r.eye] : ''}<small>${resultText(r).replace(/<[^>]+>/g, '')}</small></div>`; });
+        if (delArm) s += `<p class="warn sm" style="margin-top:14px">Zmáčkni Delete ještě jednou pro smazání záznamu.</p>`;
+      }
+      return s + `</div><div class="foot">${tab === 1 ? '↑ ↓ výběr · Enter = detail · Delete = smazat · ' : ''}E = uložit zálohu (JSON) · I = načíst zálohu · Esc = nabídka</div>`;
+    },
+    key(e) {
+      const k = e.key;
+      if (detail) { if (k === 'Escape' || k === 'Enter') { detail = null; paint(); } return true; }
+      if (k === 'ArrowLeft' || k === 'ArrowRight') tab = 1 - tab;
+      else if (tab === 1 && k === 'ArrowDown') { sel = Math.min(list().length - 1, sel + 1); delArm = false; }
+      else if (tab === 1 && k === 'ArrowUp') { sel = Math.max(0, sel - 1); delArm = false; }
+      else if (tab === 1 && k === 'Enter' && list()[sel]) detail = list()[sel];
+      else if (tab === 1 && k === 'Delete' && list()[sel]) {
+        if (!delArm) delArm = true;
+        else { const id = list()[sel].id; RES = RES.filter(r => r.id !== id); LS.set('oko.results', RES); delArm = false; sel = Math.max(0, Math.min(sel, RES.length - 1)); }
+      }
+      else if (k === 'e' || k === 'E') exportJSON();
+      else if (k === 'i' || k === 'I') importJSON();
+      else return;
+      paint(); return true;
+    },
+    globals: true,
+  };
+}
+function exportJSON() {
+  const blob = new Blob([JSON.stringify({ app: 'ariel-oko', v: 1, settings: SET, results: RES }, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `kontrola-zraku-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function importJSON() {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,application/json';
+  inp.onchange = () => { const f = inp.files[0]; if (!f) return; f.text().then(t => {
+    try { const d = JSON.parse(t), have = new Set(RES.map(r => r.id));
+      for (const r of (d.results || [])) if (r && r.id && r.test && !have.has(r.id)) RES.push(r);
+      RES.sort((a, b) => a.date < b.date ? -1 : 1); LS.set('oko.results', RES); paint();
+    } catch (e) { alert('Soubor se nepodařilo načíst.'); } }); };
+  inp.click();
+}
+
+// ════════════ nastaveni a upozorneni ════════════
+function settingsView() {
+  let arm = false;
+  return {
+    html() {
+      return `<div class="page" style="top:90px"><h1>Nastavení a upozornění</h1>
+        <p><span class="warn">Není to lékařské vyšetření.</span> Aplikace slouží k domácímu sledování, jestli se zrak mění.
+        Výsledky ovlivní únava, světlo v místnosti, nasazení brýlí i displej. Změny ber jako důvod probrat to s očním lékařem,
+        ne jako diagnózu. Náhlé zhoršení vidění, bolest oka při pohybu nebo nový výpadek v zorném poli řeš hned s lékařem.</p>
+        <p class="sm">Pro srovnatelné výsledky: měř za stejného světla, se stejným ztmavením brýlí (ideálně nejtmavší) a s dioptrickou vložkou, pokud ji nosíš.
+        Černá barva je v brýlích průhledná, takže v tmavší místnosti testy fungují nejlépe.</p>
+        <p class="sm">Hustota displeje: <span class="acc">${fmt(SET.ppd, 1)} px na stupeň</span> <span class="muted">(← → upravit; výchozí 38,6 odpovídá zornému úhlu 57°)</span>.
+        Jemné rozlišení je omezené displejem, ostrost lepší než asi ${fmt(Math.max(0, Math.ceil(Math.log10(60 / SET.ppd) * 10 - 1e-6) / 10), 1)} logMAR už změřit nejde.</p>
+        <p class="sm">Ukládání: ${LS.ok ? '<span class="good">funguje</span>' : '<span class="bad">nefunguje</span>'} · S = přepnout SBS / jeden obraz · F = celá obrazovka</p>
+        ${arm ? '<p class="warn sm">Zmáčkni X ještě jednou: smažou se VŠECHNY výsledky.</p>' : '<p class="sm muted">X = smazat všechny výsledky</p>'}
+        </div><div class="foot">Esc = nabídka</div>`;
+    },
+    key(e) {
+      if (e.key === 'ArrowLeft') { SET.ppd = Math.max(20, r1(SET.ppd - 0.5)); saveSet(); }
+      else if (e.key === 'ArrowRight') { SET.ppd = Math.min(80, r1(SET.ppd + 0.5)); saveSet(); }
+      else if (e.key === 'x' || e.key === 'X') { if (arm) { RES = []; LS.set('oko.results', RES); arm = false; } else arm = true; }
+      else return;
+      paint();
+    },
+    globals: true,
+  };
+}
+
+// ════════════ DEMO: cteni s lupou podle (simulovaneho) pohledu ════════════
+const READ_TEXT = [
+  'Ráno bylo tiché a město se teprve probouzelo. Na zastávce stálo pár lidí s kávou v ruce a autobus přijel přesně podle jízdního řádu. Za okny ubíhaly stromy, které už začínaly žloutnout.',
+  'Brýle mohou jednou poznat, kam se člověk dívá, a zvětšit právě to slovo, které čte. Text kolem zůstane malý a klidný, takže stránka se nerozpadne a oko nemusí skákat. Pro slabší oko to může znamenat, že čtení bude méně namáhavé.',
+  'V tomto demu pohled zastupuje myš nebo pohyb hlavy. Skutečné sledování očí brýle XREAL One Pro zatím nemají, ale princip je stejný: bod pohledu se vyhladí, aby lupa necukala, a slova poblíž se zvětší.',
+];
+function readerView() {
+  let gx = 960, gy = 400, tx = 960, ty = 400, zoom = 2.2, mode = 'mouse', raf = 0, rad = 170, inv = !!SET.readInv;
+  let words = [], wi = 0, wt = 0, lastT = 0, jitter = true;
+  const textHTML = READ_TEXT.map(p => '<p>' + p.split(' ').map(w => `<span class="w">${w}</span>`).join(' ') + '</p>').join('');
+  function measure() {
+    const host = cvL.querySelector('.reader'); if (!host) return;
+    const cr = cvL.getBoundingClientRect();
+    words = [...host.querySelectorAll('.w')].map(el => { const b = el.getBoundingClientRect();
+      return { x: (b.left - cr.left) / scale + (b.width / scale) / 2, y: (b.top - cr.top) / scale + (b.height / scale) / 2, w: b.width / scale }; });
+  }
+  function frame(t) {
+    const dt = Math.min(0.05, (t - (lastT || t)) / 1000); lastT = t;
+    if (mode === 'auto' && words.length) {                    // simulace cteni: fixace na slove, sakada na dalsi
+      wt += dt;
+      const w = words[wi], dur = 0.18 + w.w / 900;
+      if (wt > dur) { wt = 0; wi = (wi + 1) % words.length; }
+      tx = words[wi].x - words[wi].w * 0.15; ty = words[wi].y;
+    }
+    const k = 1 - Math.exp(-dt * 9);                          // vyhlazeni jako u eye trackeru
+    gx += (tx + (jitter ? rand(-6, 6) : 0) - gx) * k;
+    gy += (ty + (jitter ? rand(-4, 4) : 0) - gy) * k;
+    for (const cv of [cvL, cvR]) {
+      const lens = cv.querySelector('.lensbox'); if (!lens) continue;
+      lens.style.clipPath = `ellipse(${rad * 1.9}px ${rad * 0.62}px at ${gx}px ${gy}px)`;
+      const inner = lens.firstElementChild;
+      inner.style.transformOrigin = `${gx}px ${gy}px`; inner.style.transform = `scale(${zoom})`;
+      const dot = cv.querySelector('.gaze'); if (dot) { dot.style.left = (gx - 6) + 'px'; dot.style.top = (gy - 6) + 'px'; }
+      const ring = cv.querySelector('.ring');
+      if (ring) { ring.style.left = (gx - rad * 1.9) + 'px'; ring.style.top = (gy - rad * 0.62) + 'px';
+        ring.style.width = rad * 3.8 + 'px'; ring.style.height = rad * 1.24 + 'px'; }
+    }
+    raf = requestAnimationFrame(frame);
+  }
+  return {
+    enter() { raf = requestAnimationFrame(frame); },
+    leave() { cancelAnimationFrame(raf); },
+    after() { measure(); },
+    html() {
+      return `<div class="top"><span>Čtení s lupou · demo</span><span>pohled: ${mode === 'mouse' ? 'myš / hlava' : 'simulace čtení'}</span></div>
+        ${inv ? '<div style="position:absolute;inset:0;background:#f2f2f2"></div>' : ''}
+        <div class="reader"${inv ? ' style="color:#333"' : ''}>${textHTML}</div>
+        <div class="lensbox"><div style="position:absolute;inset:0;background:${inv ? '#fff' : '#000'}"><div class="reader"${inv ? ' style="color:#000"' : ''}>${textHTML}</div></div></div>
+        <div class="ring" style="position:absolute;border:2px solid ${inv ? 'rgba(40,90,140,.45)' : 'rgba(140,196,240,.35)'};border-radius:50%"></div>
+        <div class="gaze" style="position:absolute;width:12px;height:12px;border-radius:50%;background:${inv ? 'rgba(40,90,140,.6)' : 'rgba(140,196,240,.55)'}"></div>
+        <div class="foot"${inv ? ' style="color:#555"' : ''}>M = myš ↔ simulace čtení · + / − zvětšení (${fmt(zoom, 1)}×) · ↑ ↓ velikost lupy · I = invertovat barvy · J = šum ${jitter ? 'zap' : 'vyp'} · Esc = nabídka<br>
+        Simulace: skutečné sledování očí brýle nemají, pohled zastupuje myš (nebo myš hlavou z Arielu).</div>`;
+    },
+    key(e) {
+      const k = e.key;
+      if (k === 'm' || k === 'M') { mode = mode === 'mouse' ? 'auto' : 'mouse'; wi = 0; wt = 0; }
+      else if (k === '+' || k === '=') zoom = Math.min(16, r1(zoom + (zoom >= 8 ? 1 : zoom >= 4 ? 0.5 : 0.2)));
+      else if (k === '-') zoom = Math.max(1.2, r1(zoom - (zoom > 8 ? 1 : zoom > 4 ? 0.5 : 0.2)));
+      else if (k === 'ArrowUp') rad = Math.min(1280, rad + (rad >= 640 ? 80 : rad >= 320 ? 40 : 20));
+      else if (k === 'ArrowDown') rad = Math.max(80, rad - (rad > 640 ? 80 : rad > 320 ? 40 : 20));
+      else if (k === 'i' || k === 'I') { inv = !inv; SET.readInv = inv; saveSet(); }
+      else if (k === 'j' || k === 'J') jitter = !jitter;
+      else return;
+      paint();
+    },
+    mouse(x, y) { if (mode === 'mouse') { tx = x; ty = y; } },
+    globals: true,
+  };
+}
+
+// ════════════ vstupy ════════════
+addEventListener('keydown', e => {
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Tab', 'Backspace'].includes(e.key)) e.preventDefault();
+  if (e.repeat && (e.key === ' ' || e.key === 'Enter')) return;
+  if (e.key === 'Escape') {
+    if (V && V.key && V.key(e) === true) return;
+    if (!(V && V.isMenu)) { show(menuView()); }
+    return;
+  }
+  if (V && V.globals) {
+    if (e.key === 'f' || e.key === 'F') { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); return; }
+    if (e.key === 's' || e.key === 'S') { SBS = !isSBS; layout(); return; }
+  }
+  if (V && V.key) V.key(e);
+});
+function toCanvas(ev) {
+  const off = isSBS && ev.clientX >= EW ? EW : 0;
+  return [(ev.clientX - off - EW / 2) / scale + 960, (ev.clientY - innerHeight / 2) / scale + 540];
+}
+addEventListener('mousemove', ev => { if (V && V.mouse) V.mouse(...toCanvas(ev), 'move'); });
+addEventListener('mousedown', ev => {
+  if (!V) return;
+  if (V.mouse) V.mouse(...toCanvas(ev), 'click');
+  else if (V.clickSpace && V.key) V.key({ key: ' ' });   // klik v testu pole = mezernik
+});
+addEventListener('contextmenu', e => e.preventDefault());
+
+show(menuView());
+layout();
+</script>
+</body>
+</html>

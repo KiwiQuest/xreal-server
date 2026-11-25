@@ -1,0 +1,9 @@
+{
+  "head": {
+    "gain": 42.0,
+    "dead": 3.5,
+    "inv_x": false,
+    "inv_y": false,
+    "swap": false
+  }
+}

@@ -1,0 +1,64 @@
+﻿# Verejne repo: jen serverova cast (Python/HTML pro Windows).
+# Vse v koreni je ignorovane, povolene jsou jen vybrane slozky.
+/*
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/README.en.md
+!/ariel/
+!/xreal-eye-rgb/
+!/rgb-test/
+!/Xreal mouse/
+!/xreal-web/
+!/xreal-sim/
+!/Adrduino/
+
+# Zamerne mimo repo (soukrome / Unity / buildy):
+#   Xreal Unity/, HW KOMPONENTY/, XrealGalaxi/, XrealGuns*/, XrealVisualizer/, Xreal-Effects/, _archiv/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Logy a vystupy
+*.log
+logs/
+log.txt
+rgb_out/
+captures/
+dataset/
+**/data/captures/
+**/data/dataset/
+*.bak.json
+
+# Modely a velke binarky
+models/
+*.pt
+*_openvino_model/
+*.onnx
+*.bin
+*.mkv
+*.mp4
+*.bundle
+
+# Obrazky (snimky z kamery, cizi textury s autorskymi pravy)
+*.jpg
+*.jpeg
+*.png
+*.webp
+**/static/textures/
+
+# Soukrome: databaze tvari a klice
+**/data/faces/
+*.key
+*.pem
+
+# Lokalni konfigurace
+xreal_config.json
+**/data/camera.json
+
+# Prazdne pomocne soubory
+/Adrduino/1
+/Adrduino/python

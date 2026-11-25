@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<title>YOLO HUD</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html, body { width:100%; height:100%; background:#000; color:#00ff80; overflow:hidden;
+    font-family:'Courier New',monospace; user-select:none; }
+
+  .win { position:absolute; display:flex; flex-direction:column; min-width:240px; min-height:140px;
+    border:1px solid #0d5a33; background:rgba(0,10,5,0.55); border-radius:4px; }
+  .win.active { border-color:#00ff80; }
+  .bar { flex:0 0 30px; display:flex; align-items:center; gap:6px; padding:0 6px;
+    background:rgba(0,40,20,0.85); cursor:move; border-bottom:1px solid #0d5a33; }
+  .title { font-size:13px; letter-spacing:1px; color:#3fdc8c; white-space:nowrap; }
+  .tools { margin-left:auto; display:flex; align-items:center; gap:4px; }
+  .bar button, #layoutbar button {
+    font:12px 'Courier New',monospace; color:#00ff80; background:#062a17; border:1px solid #1a6a40;
+    padding:3px 8px; border-radius:3px; cursor:pointer; }
+  .bar button:hover, #layoutbar button:hover { border-color:#00ff80; }
+  .bar button.on { background:#00ff80; color:#000; }
+  #b-rec.on { background:#ff3040; color:#fff; border-color:#ff3040; }
+  .bar label { font-size:12px; color:#3fdc8c; display:flex; align-items:center; gap:2px; cursor:pointer; }
+  .info { font-size:12px; color:#2fa86a; white-space:nowrap; }
+  .body { position:relative; flex:1; overflow:hidden; }
+  .grip { position:absolute; right:0; bottom:0; width:16px; height:16px; cursor:nwse-resize;
+    background:linear-gradient(135deg, transparent 55%, #1a8a50 55%, #1a8a50 65%, transparent 65%,
+      transparent 75%, #1a8a50 75%, #1a8a50 85%, transparent 85%); }
+
+  #img, #frozen { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
+  #frozen { display:none; }
+  #msg { position:absolute; left:0; right:0; top:45%; text-align:center; font-size:14px; color:#3fdc8c; }
+  #paused { position:absolute; top:8px; left:8px; font-size:13px; color:#000; background:#ffd200;
+    padding:2px 6px; display:none; }
+
+  .list { overflow-y:auto; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  thead th { position:sticky; top:0; background:rgba(0,30,15,0.95); color:#3fdc8c; font-weight:normal;
+    text-align:left; padding:4px 6px; border-bottom:1px solid #0d5a33; }
+  tbody td { padding:2px 6px; white-space:nowrap; border-bottom:1px solid rgba(13,90,51,0.25); }
+  td.sw span { display:inline-block; width:10px; height:10px; border-radius:2px; vertical-align:middle; }
+  td.num { text-align:right; }
+
+  .pad { padding:8px; overflow:auto; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:8px; font-size:12px; color:#3fdc8c; }
+  .row label { display:flex; gap:4px; align-items:center; }
+  select { font:12px 'Courier New',monospace; color:#00ff80; background:#062a17; border:1px solid #1a6a40; padding:2px 4px; }
+  select option:disabled { color:#3a5a48; }
+  .pad button { font:12px 'Courier New',monospace; color:#00ff80; background:#062a17; border:1px solid #1a6a40;
+    padding:3px 8px; border-radius:3px; cursor:pointer; }
+  .pad button:hover { border-color:#00ff80; }
+  .err { color:#ff6070; }
+  /* minimalizace / stred / maximalizace oken */
+  .wbtns { display:flex; gap:3px; margin-left:6px; flex:none; }
+  .bar button.wb { padding:1px 0; width:24px; font-size:13px; line-height:16px; }
+  .bar button.wb:hover { background:#0d4a2a; }
+  .win.max { left:4px !important; top:4px !important; width:calc(100vw - 8px) !important;
+    height:calc(100vh - 8px) !important; z-index:9000 !important; }
+  .win.max .grip { display:none; }
+  .win.max .bar { cursor:default; }
+  .win.min { display:none !important; }
+  #dock { position:absolute; left:10px; bottom:10px; display:flex; gap:6px; z-index:9500; }
+  #dock button { font:12px 'Courier New',monospace; color:#00ff80; background:#062a17; border:1px solid #1a6a40;
+    padding:4px 10px; border-radius:3px; cursor:pointer; }
+  #dock button:hover { border-color:#00ff80; background:#0d4a2a; }
+  #layoutbar { position:absolute; right:10px; bottom:10px; display:flex; gap:6px; align-items:center; z-index:9500;
+    opacity:0.35; transition:opacity .2s; }
+  #layoutbar:hover { opacity:1; }
+  #status { font-size:12px; color:#2fa86a; }
+
+  /* OCR */
+  #ocr-cv { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  #w-ocr .body { display:flex; flex-direction:column; }
+  #ocr-tools { flex:none; padding:6px 8px 4px; }
+  #ocr-tools .row { margin-bottom:4px; }
+  #ocr-lines { flex:1; overflow-y:auto; padding:2px 8px 8px; font-size:17px; line-height:1.35; color:#e8fff2;
+    user-select:text; }
+  #ocr-lines div { padding:1px 4px; border-left:2px solid transparent; cursor:pointer; }
+  #ocr-lines div:hover { border-left-color:#ffd200; }
+  #ocr-lines div.sel { background:rgba(255,210,0,0.16); border-left-color:#ffd200; }
+  #ocr-lines .none { color:#2fa86a; font-size:13px; cursor:default; }
+  #ocr-read.busy { opacity:.5; }
+  #ocr-live.on { background:#ffd200; color:#000; border-color:#ffd200; }
+</style>
+</head>
+<body>
+
+<div class="win" id="w-stream">
+  <div class="bar">
+    <span class="title">YOLO · EYE</span>
+    <span class="info" id="s-info"></span>
+    <span class="tools">
+      <button id="z-out" title="oddálit (−)">−</button>
+      <span class="info" id="z-info" title="kolečko = zoom na kurzor, tažení = posun, 0 = zpět">1.0×</span>
+      <button id="z-in" title="přiblížit (+)">+</button>
+      <button id="z-1" title="bez zoomu (0)">1×</button>
+      <button id="b-pause" title="Mezerník">PAUSE</button>
+      <button id="b-snap" title="S">SNAP</button>
+      <button id="b-rec" title="R">REC</button>
+      <label title="nahrávat video s overlayem"><input type="checkbox" id="c-v" checked>V</label>
+      <label title="nahrávat data (CSV)"><input type="checkbox" id="c-d" checked>D</label>
+    </span>
+  </div>
+  <div class="body">
+    <img id="img" alt="">
+    <canvas id="frozen"></canvas>
+    <canvas id="ocr-cv"></canvas>
+    <div id="paused">PAUZA</div>
+    <div id="msg">připojuji…</div>
+  </div>
+  <div class="grip"></div>
+</div>
+
+<div class="win" id="w-list">
+  <div class="bar">
+    <span class="title">DETEKCE</span>
+    <span class="info" id="l-info"></span>
+    <span class="tools"><button id="b-clear">CLR</button></span>
+  </div>
+  <div class="body list">
+    <table>
+      <thead><tr><th></th><th>čas</th><th>třída</th><th class="num">conf</th>
+        <th class="num">x, y</th><th class="num">w × h</th><th class="num">plocha</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="grip"></div>
+</div>
+
+<div class="win" id="w-model">
+  <div class="bar">
+    <span class="title">MODEL</span>
+    <span class="info" id="m-info"></span>
+  </div>
+  <div class="body pad">
+    <div class="row">
+      <label>velikost <select id="m-size"><option value="n">nano</option><option value="s">small</option>
+        <option value="m">medium</option></select></label>
+      <label>úloha <select id="m-task"><option value="det">detekce</option>
+        <option value="seg">segmentace</option></select></label>
+      <label>běh <select id="m-backend">
+        <option value="torch:cpu">PyTorch · CPU</option>
+        <option value="openvino:cpu">OpenVINO · CPU</option>
+        <option value="openvino:gpu">OpenVINO · GPU (Arc)</option>
+        <option value="openvino:npu">OpenVINO · NPU</option></select></label>
+      <button id="m-apply">POUŽÍT</button>
+    </div>
+    <div class="row">
+      <button id="m-bench">BENCHMARK</button>
+      <label title="medium se stahuje a měří déle"><input type="checkbox" id="m-bm">i medium</label>
+      <span class="info" id="m-bstat"></span>
+    </div>
+    <div class="row">
+      <label title="vyplnit vybrané objekty texturou"><input type="checkbox" id="t-on">textura</label>
+      <select id="t-name"></select>
+      <span class="info">třídy: <span id="t-cls">všechny</span></span>
+      <button id="t-all" title="textura na všechny objekty">VŠE</button>
+    </div>
+    <div class="row info">klikni na objekt ve streamu = textura na jeho třídu (znovu = odebrat)</div>
+    <table>
+      <thead><tr><th>model</th><th>běh</th><th class="num">načtení</th><th class="num">ms</th>
+        <th class="num">fps</th></tr></thead>
+      <tbody id="b-rows"></tbody>
+    </table>
+  </div>
+  <div class="grip"></div>
+</div>
+
+<div class="win" id="w-ocr">
+  <div class="bar">
+    <span class="title">OCR</span>
+    <span class="info" id="o-info"></span>
+    <span class="tools">
+      <button id="ocr-read" title="O">ČÍST</button>
+      <button id="ocr-live" title="L – číst průběžně">LIVE</button>
+    </span>
+  </div>
+  <div class="body">
+    <div id="ocr-tools" class="pad">
+      <div class="row">
+        <label>jazyk <select id="ocr-lang"><option value="">podle Windows</option></select></label>
+        <label title="rámečky textu ve streamu"><input type="checkbox" id="ocr-boxes" checked>rámečky</label>
+        <button id="ocr-speak" title="N">NAHLAS</button>
+        <button id="ocr-copy" title="do schránky Windows">KOPÍROVAT</button>
+        <button id="ocr-type" title="vepíše text do okna, na které do 3 s klikneš">NAPSAT</button>
+      </div>
+      <div class="row info">klik na řádek = vybrat (víc řádků = postupně), NAHLAS/KOPÍROVAT/NAPSAT pak jen vybrané · zoom = ostřejší čtení</div>
+    </div>
+    <div id="ocr-lines"><div class="none">ČÍST (O) přečte text z obrazu, LIVE čte průběžně</div></div>
+  </div>
+  <div class="grip"></div>
+</div>
+
+<div id="dock"></div>
+<div id="layoutbar">
+  <span id="status"></span>
+  <button id="b-save">ULOŽIT ROZLOŽENÍ</button>
+  <button id="b-reset">VÝCHOZÍ</button>
+</div>
+
+<script>
+const MAX_ROWS = 100, SRC_W = 1920, SRC_H = 1080;
+const STREAM = '/eye_yolo.mjpg', BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+const $ = id => document.getElementById(id);
+const img = $('img'), frozen = $('frozen'), msg = $('msg'), rows = $('rows');
+let paused = false, lastSeq = -1, lastDets = [], lastT = 0, recOn = false, retry = null;
+
+function status(t) { $('status').textContent = t; clearTimeout(status.h); status.h = setTimeout(() => $('status').textContent = '', 6000); }
+function post(url, body) {
+  return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(body || {}) });
+}
+
+// ── okna: presun, zmena velikosti, rozlozeni ─────────────────────────────────
+const DEFAULT = () => {
+  const sw = Math.round(innerWidth * 0.55), sh = Math.round(sw * 9 / 16) + 30, lw = Math.round(innerWidth * 0.38);
+  return {
+    'w-stream': { x: 40, y: 40, w: sw, h: sh },
+    'w-list':   { x: sw + 60, y: 40, w: lw, h: sh },
+    'w-model':  { x: sw + 60, y: sh + 56, w: lw, h: Math.max(220, innerHeight - sh - 110) },
+    'w-ocr':    { x: 40, y: sh + 56, w: sw, h: Math.max(200, innerHeight - sh - 110) },
+  };
+};
+function apply(layout) {
+  for (const [id, r] of Object.entries(layout)) {
+    const el = $(id); if (!el || !r) continue;
+    el.style.left = r.x + 'px'; el.style.top = r.y + 'px';
+    el.style.width = r.w + 'px'; el.style.height = r.h + 'px';
+    el.classList.toggle('min', !!r.min);
+    el.classList.toggle('max', !!r.max);
+  }
+  if (typeof renderDock === 'function') { renderDock(); winUi(); }
+}
+function current() {                               // pozice "obnoveneho" okna + stav min / max
+  const out = {};
+  for (const el of document.querySelectorAll('.win'))
+    out[el.id] = { x: parseInt(el.style.left) || 0, y: parseInt(el.style.top) || 0,
+                   w: parseInt(el.style.width) || el.offsetWidth, h: parseInt(el.style.height) || el.offsetHeight,
+                   min: el.classList.contains('min'), max: el.classList.contains('max') };
+  return out;
+}
+apply(DEFAULT());
+fetch('/layout').then(r => r.json()).then(l => { if (l && l['w-stream']) apply(l); }).catch(() => {});
+$('b-save').onclick = () => post('/layout', current()).then(() => status('rozložení uloženo'));
+$('b-reset').onclick = () => { apply(DEFAULT()); status('výchozí rozložení (ULOŽIT = zapamatovat)'); };
+
+// ── minimalizace (do listy vlevo dole), na stred, maximalizace (dvojklik na listu) ──
+const winTitle = w => w.querySelector('.title').textContent.replace(/\s+/g, ' ').trim();
+function winChanged() { renderDock(); winUi(); setTimeout(() => dispatchEvent(new Event('resize')), 0); }
+function winMin(w, on = true) {
+  w.classList.toggle('min', on);
+  if (!on) { w.style.zIndex = ++z; }
+  winChanged();
+}
+function winMax(w, on = !w.classList.contains('max')) {
+  w.classList.toggle('max', on);
+  w.classList.remove('min');
+  w.style.zIndex = ++z;
+  winChanged();
+}
+function winCenter(w) {
+  w.classList.remove('max', 'min');
+  const ww = Math.min(w.offsetWidth, innerWidth - 8), hh = Math.min(w.offsetHeight, innerHeight - 8);
+  w.style.width = ww + 'px'; w.style.height = hh + 'px';
+  w.style.left = Math.round((innerWidth - ww) / 2) + 'px';
+  w.style.top = Math.round((innerHeight - hh) / 2) + 'px';
+  w.style.zIndex = ++z;
+  winChanged();
+}
+function winUi() {
+  for (const w of document.querySelectorAll('.win')) {
+    const b = w.querySelector('.wb-max');
+    if (b) { const m = w.classList.contains('max'); b.textContent = m ? '❐' : '□'; b.title = m ? 'obnovit (dvojklik na lištu, Esc)' : 'maximalizovat (dvojklik na lištu)'; }
+  }
+}
+function renderDock() {
+  const dock = $('dock'); dock.innerHTML = '';
+  for (const w of document.querySelectorAll('.win.min')) {
+    const b = document.createElement('button');
+    b.textContent = '▴ ' + winTitle(w);
+    b.title = 'obnovit okno';
+    b.onclick = () => winMin(w, false);
+    dock.appendChild(b);
+  }
+}
+for (const w of document.querySelectorAll('.win')) {
+  const bar = w.querySelector('.bar'), box = document.createElement('span');
+  box.className = 'wbtns';
+  const mk = (cls, txt, title, fn) => {
+    const b = document.createElement('button'); b.className = 'wb ' + cls; b.textContent = txt; b.title = title;
+    b.addEventListener('mousedown', e => e.stopPropagation());
+    b.onclick = e => { e.stopPropagation(); fn(); }; box.appendChild(b);
+  };
+  mk('wb-min', '_', 'minimalizovat (obnovení: lišta vlevo dole)', () => winMin(w, true));
+  mk('wb-ctr', '◎', 'na střed', () => winCenter(w));
+  mk('wb-max', '□', 'maximalizovat (dvojklik na lištu)', () => winMax(w));
+  bar.appendChild(box);
+  bar.addEventListener('dblclick', e => { if (!e.target.closest('button, label, input, select')) winMax(w); });
+}
+addEventListener('keydown', e => {                 // Esc = obnovit maximalizovana okna
+  if (e.key === 'Escape') document.querySelectorAll('.win.max').forEach(w => winMax(w, false));
+});
+
+let z = 10;
+for (const win of document.querySelectorAll('.win')) {
+  win.addEventListener('mousedown', () => {
+    win.style.zIndex = ++z;
+    document.querySelectorAll('.win').forEach(w => w.classList.toggle('active', w === win));
+  });
+  const bar = win.querySelector('.bar'), grip = win.querySelector('.grip');
+  bar.addEventListener('mousedown', e => {
+    if (e.target.closest('button, label, input') || win.classList.contains('max')) return;
+    const sx = e.clientX - win.offsetLeft, sy = e.clientY - win.offsetTop;
+    const mv = ev => {
+      win.style.left = Math.max(0, Math.min(innerWidth - 60, ev.clientX - sx)) + 'px';
+      win.style.top  = Math.max(0, Math.min(innerHeight - 30, ev.clientY - sy)) + 'px';
+    };
+    const up = () => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); };
+    addEventListener('mousemove', mv); addEventListener('mouseup', up); e.preventDefault();
+  });
+  grip.addEventListener('mousedown', e => {
+    const sx = e.clientX, sy = e.clientY, w0 = win.offsetWidth, h0 = win.offsetHeight;
+    const mv = ev => {
+      win.style.width  = Math.max(240, w0 + ev.clientX - sx) + 'px';
+      win.style.height = Math.max(140, h0 + ev.clientY - sy) + 'px';
+    };
+    const up = () => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); };
+    addEventListener('mousemove', mv); addEventListener('mouseup', up); e.preventDefault(); e.stopPropagation();
+  });
+}
+
+// ── stream ───────────────────────────────────────────────────────────────────
+function start() {
+  clearTimeout(retry);
+  msg.textContent = 'načítám YOLO…'; msg.style.display = 'block';
+  img.src = STREAM + '?t=' + Date.now();
+}
+img.addEventListener('load', () => { if (img.src !== BLANK) msg.style.display = 'none'; });
+img.addEventListener('error', () => {
+  if (paused) return;
+  fetch('/yolo.json').then(r => r.json()).then(y => { msg.textContent = 'YOLO: ' + y.status; })
+    .catch(() => { msg.textContent = 'server nedostupný'; });
+  msg.style.display = 'block';
+  retry = setTimeout(start, 3000);
+});
+start();
+
+function grabCanvas() {
+  if (paused) return frozen;
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth || 960; c.height = img.naturalHeight || 540;
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c;
+}
+
+function setPause(p) {
+  const c = p ? grabCanvas() : null;        // snimek vzit JESTE pred prepnutim do pauzy
+  paused = p;
+  $('b-pause').classList.toggle('on', p);
+  $('b-pause').textContent = p ? 'PLAY' : 'PAUSE';
+  $('paused').style.display = p ? 'block' : 'none';
+  if (p) {
+    frozen.width = c.width; frozen.height = c.height;
+    frozen.getContext('2d').drawImage(c, 0, 0);
+    frozen.style.display = 'block'; img.style.visibility = 'hidden';
+    img.src = BLANK;                         // zastavi stahovani streamu
+    frozen.dataset.t = lastT; frozen._dets = lastDets.slice();
+  } else {
+    frozen.style.display = 'none'; img.style.visibility = 'visible';
+    start();
+  }
+}
+$('b-pause').onclick = () => setPause(!paused);
+
+function snap() {
+  const c = grabCanvas();
+  const dets = paused ? (frozen._dets || []) : lastDets;
+  const t = paused ? Number(frozen.dataset.t || 0) : lastT;
+  post('/snap', { image: c.toDataURL('image/jpeg', 0.92), dets, t, live: !paused })
+    .then(r => r.json()).then(j => status('SNAP → ' + j.dir)).catch(() => status('SNAP selhal'));
+}
+$('b-snap').onclick = snap;
+
+// ── nahravani ────────────────────────────────────────────────────────────────
+function recUi(info) {
+  recOn = !!info.active;
+  $('b-rec').classList.toggle('on', recOn);
+  $('b-rec').textContent = recOn ? `● ${Math.round(info.secs)} s` : 'REC';
+}
+$('b-rec').onclick = () => {
+  if (recOn) {
+    post('/rec/stop').then(r => r.json()).then(i => {
+      recUi(i); status(`uloženo: ${i.dir} (${i.frames} snímků, ${i.rows} detekcí)`);
+    });
+  } else {
+    const video = $('c-v').checked, data = $('c-d').checked;
+    if (!video && !data) { status('zaškrtni V (video) nebo D (data)'); return; }
+    post('/rec/start', { video, data }).then(r => r.json()).then(i => {
+      if (i.error) { status('REC: ' + i.error); return; }
+      recUi(i); status('nahrávám → ' + i.dir);
+    });
+  }
+};
+setInterval(() => {
+  if (!recOn) return;
+  fetch('/rec/status').then(r => r.json()).then(recUi).catch(() => {});
+}, 1000);
+fetch('/rec/status').then(r => r.json()).then(recUi).catch(() => {});
+
+// ── seznam detekci ───────────────────────────────────────────────────────────
+function tstr(t) {
+  const d = new Date(t * 1000);
+  return d.toLocaleTimeString('cs-CZ', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+}
+// text v barve tridy; prilis tmave barvy zesvetlit (stejny odstin), at jsou v brylich citelne
+function readable(hex) {
+  const n = parseInt((hex || '#00ff80').slice(1), 16);
+  let r = n >> 16 & 255, g = n >> 8 & 255, b = n & 255;
+  const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  if (lum < 0.45) {
+    const k = Math.min(0.75, (0.45 - lum) * 1.6 + 0.25);
+    r = Math.round(r + (255 - r) * k); g = Math.round(g + (255 - g) * k); b = Math.round(b + (255 - b) * k);
+  }
+  return `rgb(${r},${g},${b})`;
+}
+function addDets(y) {
+  if (paused || y.seq === lastSeq) return;
+  lastSeq = y.seq; lastFresh = Date.now();
+  lastDets = y.dets || []; lastT = y.t || Date.now() / 1000;
+  msg.style.display = 'none';            // data tecou -> pryc s 'nacitam'
+  $('s-info').textContent = `${y.model || ''} · ${y.ms} ms · ${y.fps} fps`;
+  const frag = document.createDocumentFragment();
+  if (y.zoom) zoomUi(y.zoom);
+  for (const d of lastDets) {
+    const [x1, y1, x2, y2] = d.sbox || d.box;     // pri zoomu px v celem 1080p snimku
+    const x = Math.round(x1 * SRC_W), yy = Math.round(y1 * SRC_H);
+    const w = Math.round((x2 - x1) * SRC_W), h = Math.round((y2 - y1) * SRC_H);
+    const tr = document.createElement('tr');
+    tr.style.color = readable(d.color);
+    tr.innerHTML = `<td class="sw"><span style="background:${d.color || '#00ff80'}"></span></td>`
+      + `<td>${tstr(lastT)}</td><td>${d.name}</td><td class="num">${Math.round(d.conf * 100)}%</td>`
+      + `<td class="num">${x}, ${yy}</td><td class="num">${w} × ${h}</td>`
+      + `<td class="num">${d.area != null ? (d.area * 100).toFixed(1) + ' %' : ''}</td>`;
+    frag.appendChild(tr);
+  }
+  rows.insertBefore(frag, rows.firstChild);
+  while (rows.children.length > MAX_ROWS) rows.removeChild(rows.lastChild);
+  $('l-info').textContent = `${rows.children.length}/${MAX_ROWS}`;
+}
+$('b-clear').onclick = () => { rows.innerHTML = ''; $('l-info').textContent = `0/${MAX_ROWS}`; };
+
+// data: WebSocket (stav ze serveru), kdyz neni, tak HTTP
+let ws = null, wsOk = false;
+function connect() {
+  try { ws = new WebSocket('ws://' + location.hostname + ':8765'); } catch (e) { setTimeout(connect, 3000); return; }
+  ws.onopen = () => { wsOk = true; };
+  ws.onclose = () => { wsOk = false; setTimeout(connect, 3000); };
+  ws.onerror = () => { try { ws.close(); } catch (e) {} };
+  ws.onmessage = e => { try { const d = JSON.parse(e.data); if (d.yolo) addDets(d.yolo); if (d.ocr) ocrShow(d.ocr); } catch (err) {} };
+}
+connect();
+setInterval(() => {
+  if (wsOk || paused) return;
+  fetch('/yolo.json').then(r => r.json()).then(y => { if (y.running) addDets(y); }).catch(() => {});
+}, 150);
+
+// ── okno MODEL: vyber modelu a behu, benchmark ─────────────────────────────
+let cfgSynced = false;
+function syncModel(y) {
+  const devs = (y.devices || []).map(d => d.toUpperCase());
+  for (const o of $('m-backend').options) {
+    const dev = o.value.split(':')[1].toUpperCase();
+    o.disabled = o.value.startsWith('openvino') && !devs.includes(dev);
+  }
+  if (y.cfg && !cfgSynced) {
+    $('m-size').value = y.cfg.size; $('m-task').value = y.cfg.task; $('m-backend').value = y.cfg.backend;
+    cfgSynced = true;
+  }
+  $('m-info').textContent = `${y.model} · ${y.pending ? 'přepínám…' : y.status}`
+    + (devs.length ? ` · OpenVINO: ${devs.join(', ')}` : ' · OpenVINO nenainstalováno');
+  const tx = y.texture || {}, names = y.textures || [];
+  const sel = $('t-name');
+  if (sel.options.length !== names.length) {
+    sel.innerHTML = names.map(n => `<option value="${n}">${n}</option>`).join('');
+  }
+  if (document.activeElement !== sel && tx.name) sel.value = tx.name;
+  $('t-on').checked = !!tx.on;
+  $('t-cls').textContent = (tx.classes && tx.classes.length) ? tx.classes.join(', ') : 'všechny';
+  const b = y.bench || {};
+  $('m-bstat').textContent = b.running ? `měřím: ${b.current}…` : (b.results && b.results.length ? 'hotovo' : '');
+  $('m-bench').disabled = !!b.running;
+  const tb = $('b-rows'); tb.innerHTML = '';
+  let best = null;
+  for (const r of (b.results || [])) if (r.ms && (!best || r.ms < best.ms)) best = r;
+  for (const r of (b.results || [])) {
+    const tr = document.createElement('tr');
+    if (r.error) tr.innerHTML = `<td>${r.model}</td><td>${r.backend}</td><td class="err" colspan="3">${r.error}</td>`;
+    else tr.innerHTML = `<td>${r.model}</td><td>${r.backend}</td><td class="num">${r.load_s} s</td>`
+      + `<td class="num">${r.ms}</td><td class="num">${r.fps}</td>`;
+    if (r === best) tr.style.color = '#ffd200';
+    tb.appendChild(tr);
+  }
+}
+setInterval(() => { fetch('/yolo.json').then(r => r.json()).then(syncModel).catch(() => {}); }, 1000);
+$('m-apply').onclick = () => {
+  const cfg = { size: $('m-size').value, task: $('m-task').value, backend: $('m-backend').value };
+  post('/yolo/config', cfg).then(r => r.json()).then(c => status('model: yolo11' + c.size + (c.task === 'seg' ? '-seg' : '') + ' · ' + c.backend));
+};
+// ── textury ──────────────────────────────────────────────────────────────────
+function tex(body) {
+  post('/yolo/texture', body).then(r => r.json()).then(t => {
+    $('t-on').checked = t.on;
+    $('t-cls').textContent = t.classes.length ? t.classes.join(', ') : 'všechny';
+  });
+}
+$('t-on').onchange = () => tex({ on: $('t-on').checked });
+$('t-name').onchange = () => tex({ name: $('t-name').value, on: true });
+$('t-all').onclick = () => tex({ classes: [], on: true });
+// pozice kurzoru v obrazu 0..1 (respektuje cerne okraje object-fit: contain)
+function imgPos(e) {
+  const r = (paused ? frozen : img).getBoundingClientRect();
+  const nw = img.naturalWidth || frozen.width || 960, nh = img.naturalHeight || frozen.height || 540;
+  const k = Math.min(r.width / nw, r.height / nh), dw = nw * k, dh = nh * k;
+  return { x: (e.clientX - r.left - (r.width - dw) / 2) / dw, y: (e.clientY - r.top - (r.height - dh) / 2) / dh, dw, dh };
+}
+// ── zoom: kolecko = na kurzor, tazeni = posun, +/−/0 ─────────────────────────
+let zoomZ = 1, dragged = false;
+function zoomUi(zm) {
+  zoomZ = zm.z;
+  $('z-info').textContent = zm.available === false ? 'zoom: EYE_RAW=0' : zm.z.toFixed(1) + '×';
+  $('z-info').style.color = zm.z > 1.001 ? '#ffd200' : '';
+}
+function zoom(body) {
+  if (paused) { status('zoom: nejdřív PLAY'); return; }
+  ocrValid = false;                               // ramecky OCR patri k predchozimu zaberu
+  post('/eye/zoom', body).then(r => r.json()).then(zoomUi).catch(() => {});
+}
+$('z-in').onclick = () => zoom({ dz: 1.5 });
+$('z-out').onclick = () => zoom({ dz: 1 / 1.5 });
+$('z-1').onclick = () => zoom({ reset: 1 });
+const sbody = $('w-stream').querySelector('.body');
+sbody.addEventListener('wheel', e => {
+  e.preventDefault();
+  const p = imgPos(e);
+  const at = (p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1) ? [p.x, p.y] : undefined;
+  zoom({ dz: e.deltaY < 0 ? 1.25 : 0.8, at });
+}, { passive: false });
+sbody.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  dragged = false;
+  if (zoomZ <= 1.001 || paused) return;
+  let lx = e.clientX, ly = e.clientY, acc = [0, 0], tm = null;
+  const p0 = imgPos(e);
+  const flush = () => { tm = null; if (acc[0] || acc[1]) { zoom({ dx: acc[0], dy: acc[1] }); acc = [0, 0]; } };
+  const mv = ev => {
+    const ddx = ev.clientX - lx, ddy = ev.clientY - ly;
+    if (!dragged && Math.abs(ev.clientX - e.clientX) + Math.abs(ev.clientY - e.clientY) < 6) return;
+    dragged = true; lx = ev.clientX; ly = ev.clientY;
+    acc[0] -= ddx / p0.dw; acc[1] -= ddy / p0.dh;        // obraz se posouva s mysi
+    if (!tm) tm = setTimeout(flush, 60);
+  };
+  const up = () => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); flush(); };
+  addEventListener('mousemove', mv); addEventListener('mouseup', up); e.preventDefault();
+});
+// klik do streamu -> najit objekt pod kurzorem
+sbody.addEventListener('click', e => {
+  if (dragged) { dragged = false; return; }               // byl to posun, ne klik
+  const { x, y } = imgPos(e);
+  if (x < 0 || x > 1 || y < 0 || y > 1) return;
+  const dets = paused ? (frozen._dets || []) : lastDets;
+  let hit = null;
+  for (const d of dets) {
+    const [x1, y1, x2, y2] = d.box;
+    if (x >= x1 && x <= x2 && y >= y1 && y <= y2 && (!hit || (x2 - x1) * (y2 - y1) < hit.a))
+      hit = { d, a: (x2 - x1) * (y2 - y1) };
+  }
+  if (hit) { tex({ toggle_class: hit.d.name }); status('textura: ' + hit.d.name); }
+});
+$('m-bench').onclick = () => {
+  const sizes = $('m-bm').checked ? ['n', 's', 'm'] : ['n', 's'];
+  post('/yolo/bench', { sizes, task: $('m-task').value }).then(() => status('benchmark běží – živý obraz se mezitím zpomalí'));
+};
+
+// ── hlidac: kdyz 6 s neprijde novy snimek (napr. restart serveru), stream se pripoji znovu
+let lastFresh = Date.now();
+setInterval(() => {
+  if (paused || lastSeq === -1) { lastFresh = Date.now(); return; }   // jen kdyz uz stream jednou bezel
+  if (Date.now() - lastFresh > 6000) {
+    lastFresh = Date.now();
+    status('stream stál – připojuji znovu');
+    start();
+  }
+}, 2000);
+
+// ── OCR ──────────────────────────────────────────────────────────────────────
+const ocrCv = $('ocr-cv'), ocrLines = $('ocr-lines');
+let ocrSeq = -1, ocrData = null, ocrSel = [], ocrLive = false, ocrValid = true, ocrLangs = false;
+function ocrShow(o) {
+  if (!o || o.seq === ocrSeq) return;
+  const sameShape = ocrData && ocrData.lines.length === o.lines.length;
+  ocrSeq = o.seq; ocrData = o; ocrValid = true;
+  if (!sameShape) ocrSel = [];
+  if (typeof o.live === 'boolean') ocrLiveUi(o.live);
+  $('o-info').textContent = `${o.lines.length} řádků · ${o.ms} ms · ${o.lang || ''}`;
+  ocrLines.innerHTML = '';
+  if (!o.lines.length) ocrLines.innerHTML = '<div class="none">žádný text – zkus přiblížit (kolečko) nebo víc světla</div>';
+  o.lines.forEach((l, i) => {
+    const d = document.createElement('div');
+    d.textContent = l.text;
+    if (ocrSel.includes(i)) d.classList.add('sel');
+    d.onclick = () => {
+      ocrSel = ocrSel.includes(i) ? ocrSel.filter(x => x !== i) : [...ocrSel, i];
+      d.classList.toggle('sel'); drawOcr();
+    };
+    ocrLines.appendChild(d);
+  });
+  drawOcr();
+}
+function drawOcr() {
+  const body = ocrCv.parentElement, W = body.clientWidth, H = body.clientHeight;
+  if (ocrCv.width !== W || ocrCv.height !== H) { ocrCv.width = W; ocrCv.height = H; }
+  const g = ocrCv.getContext('2d');
+  g.clearRect(0, 0, W, H);
+  if (!ocrData || !$('ocr-boxes').checked || !ocrValid) return;
+  const age = Date.now() / 1000 - (ocrData.t || 0);
+  if (!ocrLive && !paused && age > 10) return;               // stary vysledek nekreslit
+  const nw = img.naturalWidth || frozen.width || 960, nh = img.naturalHeight || frozen.height || 540;
+  const k = Math.min(W / nw, H / nh), dw = nw * k, dh = nh * k, ox = (W - dw) / 2, oy = (H - dh) / 2;
+  ocrData.lines.forEach((l, i) => {
+    const [x1, y1, x2, y2] = l.box, sel = ocrSel.includes(i);
+    g.strokeStyle = sel ? '#ffd200' : 'rgba(255,210,0,0.75)';
+    g.lineWidth = sel ? 3 : 1.5;
+    g.strokeRect(ox + x1 * dw, oy + y1 * dh, (x2 - x1) * dw, (y2 - y1) * dh);
+    if (sel) { g.fillStyle = 'rgba(255,210,0,0.12)'; g.fillRect(ox + x1 * dw, oy + y1 * dh, (x2 - x1) * dw, (y2 - y1) * dh); }
+  });
+}
+setInterval(drawOcr, 500);
+addEventListener('resize', drawOcr);
+$('ocr-boxes').onchange = drawOcr;
+function ocrLiveUi(on) { ocrLive = on; $('ocr-live').classList.toggle('on', on); $('ocr-live').textContent = on ? 'LIVE ●' : 'LIVE'; }
+function ocrPost(body) {
+  return post('/ocr', { lang: $('ocr-lang').value, ...body }).then(r => r.json()).then(j => {
+    if (j.error) { status('OCR: ' + j.error); ocrLines.innerHTML = `<div class="none err">${j.error}</div>`; }
+    if (typeof j.live === 'boolean') ocrLiveUi(j.live);
+    return j;
+  });
+}
+function ocrRead() {
+  if ($('ocr-read').classList.contains('busy')) return;
+  $('ocr-read').classList.add('busy');
+  ocrPost({ read: 1 }).then(j => {
+    if (j.result) ocrShow({ ...j.result, lines: j.result.lines.map(l => ({ text: l.text, box: l.box })) });
+  }).catch(() => status('OCR: server neodpovídá')).finally(() => $('ocr-read').classList.remove('busy'));
+}
+const ocrPick = () => (ocrSel.length ? ocrSel.slice() : undefined);
+$('ocr-read').onclick = ocrRead;
+$('ocr-live').onclick = () => ocrPost({ live: !ocrLive });
+let speakT = null;
+function ocrSpeak() {
+  const b = $('ocr-speak');
+  if (b.classList.contains('on')) { ocrPost({ stop_speak: 1 }); b.classList.remove('on'); b.textContent = 'NAHLAS'; return; }
+  if (!ocrData || !ocrData.lines.length) { status('OCR: nejdřív ČÍST'); return; }
+  ocrPost({ speak: 1, lines: ocrPick() }).then(j => {
+    if (j.error) return;
+    status('čtu nahlas · ' + (j.voice || ''));
+    const n = (ocrSel.length ? ocrSel.map(i => ocrData.lines[i].text) : ocrData.lines.map(l => l.text)).join(' ').length;
+    b.classList.add('on'); b.textContent = 'STOP';
+    clearTimeout(speakT); speakT = setTimeout(() => { b.classList.remove('on'); b.textContent = 'NAHLAS'; }, 1500 + n * 75);
+  });
+}
+$('ocr-speak').onclick = ocrSpeak;
+$('ocr-copy').onclick = () => ocrPost({ copy: 1, lines: ocrPick() })
+  .then(j => { if (!j.error) status(j.copied ? 'text je ve schránce Windows (Ctrl+V)' : 'schránka nefunguje'); });
+$('ocr-type').onclick = () => ocrPost({ type: 1, lines: ocrPick(), delay: 3 }).then(j => {
+  if (j.error) return;
+  let n = 3; status(`klikni do okna, kam se má text napsat… ${n}`);
+  const t = setInterval(() => { n--; if (n > 0) status(`klikni do okna, kam se má text napsat… ${n}`); else { clearInterval(t); status('píšu text'); } }, 1000);
+});
+$('ocr-lang').onchange = () => ocrPost({});
+setInterval(() => {                            // jazyky + zaloha bez WebSocketu
+  if (ocrLangs && (wsOk || !ocrLive)) return;
+  fetch('/ocr.json').then(r => r.json()).then(o => {
+    if (!ocrLangs) {
+      ocrLangs = true;
+      const sel = $('ocr-lang');
+      for (const l of (o.langs || [])) { const op = document.createElement('option'); op.value = op.textContent = l; sel.appendChild(op); }
+      if (o.lang) sel.value = o.lang;
+      $('o-info').textContent = o.error ? o.error : (o.backend ? 'OCR: ' + o.backend : '');
+      if (o.error) ocrLines.innerHTML = `<div class="none err">${o.error}</div>`;
+    }
+    ocrLiveUi(!!o.live);
+    if (o.result) ocrShow({ ...o.result, lines: o.result.lines.map(l => ({ text: l.text, box: l.box })) });
+  }).catch(() => {});
+}, 1000);
+
+// ── klavesy ──────────────────────────────────────────────────────────────────
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.code === 'Space') { e.preventDefault(); setPause(!paused); }
+  else if (e.key === 's' || e.key === 'S') snap();
+  else if (e.key === 'r' || e.key === 'R') $('b-rec').click();
+  else if (e.key === 'o' || e.key === 'O') ocrRead();
+  else if (e.key === 'l' || e.key === 'L') $('ocr-live').click();
+  else if (e.key === 'n' || e.key === 'N') ocrSpeak();
+  else if (e.key === '+' || e.code === 'NumpadAdd') zoom({ dz: 1.5 });
+  else if (e.key === '-' || e.code === 'NumpadSubtract') zoom({ dz: 1 / 1.5 });
+  else if (e.key === '0' || e.code === 'Numpad0') zoom({ reset: 1 });
+  else if (zoomZ > 1.001 && e.key.startsWith('Arrow')) {
+    e.preventDefault();
+    const s = 0.15;
+    zoom({ dx: e.key === 'ArrowLeft' ? -s : e.key === 'ArrowRight' ? s : 0,
+           dy: e.key === 'ArrowUp' ? -s : e.key === 'ArrowDown' ? s : 0 });
+  }
+});
+fetch('/eye/status').then(r => r.json()).then(s => { if (s.zoom) zoomUi(s.zoom); }).catch(() => {});
+</script>
+</body>
+</html>

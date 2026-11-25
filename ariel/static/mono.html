@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ariel Mono</title>
+<!--
+  Rezim "jen jedno oko" pro bryle v Full SBS (Windows displej 3840x1080).
+  Vidici oko (vychozi prave): cela polovina = dnesni HUD (/index.html v iframe).
+  Druhe oko: cerna (v brylich pruhledna) + periferni zare u vnejsiho okraje (nebo u nosu).
+    oranzova = YOLO objekt na strane slepeho oka se blizi (box roste >20 % za 0,5 s nebo >15 % snimku)
+    cervena  = bezi zaznam (/rec/status), pomaly dech kazde 3 s
+    modra    = stisk tlacitka bryli (state.btn.t) / budouci notifikace
+  URL: ?side=right (vychozi) | ?side=left   ?glow=0 vypne zari   ?test=1 kazde 2 s blikne postupne vse
+       ?edge=outer (vychozi, spankovy okraj = zare vlevo v periferii) | ?edge=nose (u nosu)
+       ?gain=0..1 max jas zare (vychozi 0.6); pulz 400 ms, dech zaznamu 600 ms
+-->
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #000; overflow: hidden; cursor: none; }
+  .half { position: fixed; top: 0; width: 50%; height: 100%; background: #000; overflow: hidden; }
+  #hud  { border: 0; width: 100%; height: 100%; display: block; background: #000; }
+  .glow { position: absolute; top: 0; width: 200px; height: 100%; opacity: 0; pointer-events: none;
+          will-change: opacity; }
+  #dbg  { position: absolute; bottom: 8px; font: 12px 'Courier New', monospace; color: #333; }
+</style>
+</head>
+<body>
+<div class="half" id="hudHalf"><iframe id="hud" src="/index.html"></iframe></div>
+<div class="half" id="glowHalf">
+  <div class="glow" id="gOrange"></div>
+  <div class="glow" id="gRed"></div>
+  <div class="glow" id="gBlue"></div>
+  <div id="dbg"></div>
+</div>
+<script>
+const Q = new URLSearchParams(location.search);
+const SIDE = (Q.get('side') || 'right').toLowerCase() === 'left' ? 'left' : 'right';  // vidici oko
+const GLOW = Q.get('glow') !== '0';
+const TEST = Q.get('test') === '1';
+const EDGE = (Q.get('edge') || 'outer').toLowerCase() === 'nose' ? 'nose' : 'outer';  // kde zare sviti
+const GAIN = Math.min(1, Math.max(0, parseFloat(Q.get('gain') ?? '0.6') || 0));       // max jas zare
+const PULSE_MS = 400;
+const HOST = location.hostname || 'localhost';
+
+// ── rozlozeni: HUD pro vidici oko, zare na druhe polovine u okraje k nosu ──
+const hudHalf = document.getElementById('hudHalf'), glowHalf = document.getElementById('glowHalf');
+const hudLeft = SIDE === 'left';
+hudHalf.style.left  = hudLeft ? '0' : '50%';
+glowHalf.style.left = hudLeft ? '50%' : '0';
+// nos je mezi polovinami (pro leve oko pravy okraj leve poloviny) -> v zornem poli se promita
+// doprava od stredu a mate. Vychozi je proto vnejsi (spankovy) okraj = zare vlevo v periferii.
+const NOSE_EDGE = hudLeft ? 'left' : 'right';
+const GLOW_EDGE = EDGE === 'nose' ? NOSE_EDGE : (NOSE_EDGE === 'right' ? 'left' : 'right');
+const COLORS = { orange: '255,140,0', red: '255,40,40', blue: '60,140,255' };
+const EL = { orange: gOrange, red: gRed, blue: gBlue };
+for (const [k, el] of Object.entries(EL)) {
+  el.style[GLOW_EDGE] = '0';
+  el.style.background = `linear-gradient(to ${GLOW_EDGE}, rgba(${COLORS[k]},0) 0%, rgba(${COLORS[k]},.35) 55%, rgba(${COLORS[k]},.9) 100%)`;
+}
+document.getElementById('dbg').style[GLOW_EDGE === 'right' ? 'left' : 'right'] = '8px';
+const hud = document.getElementById('hud');
+hud.addEventListener('load', () => { try { hud.contentWindow.focus(); } catch (e) {} });
+document.addEventListener('keydown', e => {          // klavesy predat HUDu (prepinani modulu)
+  try { hud.contentDocument.dispatchEvent(new KeyboardEvent('keydown', { key: e.key })); } catch (_) {}
+});
+
+// ── pulzy ──
+const pulses = [];                                    // {c, t0, dur, peak}
+const lastPulse = { orange: 0, red: 0, blue: 0 };
+function pulse(c, dur = PULSE_MS, peak = 1, minGap = 900) {
+  const now = performance.now();
+  if (!GLOW || now - lastPulse[c] < minGap) return;
+  lastPulse[c] = now;
+  pulses.push({ c, t0: now, dur, peak: peak * GAIN });
+}
+function frame() {
+  const now = performance.now(), lvl = { orange: 0, red: 0, blue: 0 };
+  for (let i = pulses.length - 1; i >= 0; i--) {
+    const p = pulses[i], x = (now - p.t0) / p.dur;
+    if (x >= 1) { pulses.splice(i, 1); continue; }
+    lvl[p.c] = Math.max(lvl[p.c], p.peak * Math.sin(Math.PI * x));   // nabeh + dobeh
+  }
+  for (const c in EL) EL[c].style.opacity = lvl[c].toFixed(3);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ── oranzova: objekt na strane slepeho oka se blizi ──
+// box = normalizovane [x1,y1,x2,y2]; pri zoomu je "sbox" v souradnicich celeho snimku
+const hist = [];                                      // [{t, dets:[{name,cx,cy,a}]}]
+let lastYoloT = 0;
+function onYolo(y) {
+  if (!y || !Array.isArray(y.dets) || !y.t || y.t === lastYoloT) return;
+  lastYoloT = y.t;
+  const now = y.t, cur = [];
+  for (const d of y.dets) {
+    const b = d.sbox || d.box; if (!b) continue;
+    const cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2;
+    const a = Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
+    cur.push({ name: d.name, cx, cy, a });
+  }
+  // stav ~0,5 s zpet (nejstarsi zaznam ne starsi nez 0,8 s)
+  while (hist.length && now - hist[0].t > 0.8) hist.shift();
+  const ref = hist.find(h => now - h.t >= 0.4);
+  for (const d of cur) {
+    const blindSide = SIDE === 'right' ? d.cx < 1 / 3 : d.cx > 2 / 3;
+    if (!blindSide) continue;
+    let grow = false;
+    if (ref) {
+      let best = null, bd = 0.25;
+      for (const p of ref.dets) {
+        if (p.name !== d.name) continue;
+        const dist = Math.hypot(p.cx - d.cx, p.cy - d.cy);
+        if (dist < bd) { bd = dist; best = p; }
+      }
+      grow = best && best.a > 0.002 && d.a > best.a * 1.2;
+    }
+    if (grow || d.a > 0.15) { pulse('orange', PULSE_MS, 1, 900); break; }
+  }
+  hist.push({ t: now, dets: cur });
+}
+
+// ── modra: tlacitko bryli ──
+let lastBtnT = null;
+function onBtn(b) {
+  if (!b || b.t == null) return;
+  if (lastBtnT !== null && b.t !== lastBtnT) pulse('blue', PULSE_MS, 1, 300);
+  lastBtnT = b.t;
+}
+// budouci notifikace: window.arielNotify() nebo state.notify.t
+window.arielNotify = (c = 'blue') => pulse(c, PULSE_MS, 1, 0);
+let lastNotifyT = null;
+function onState(s) {
+  onBtn(s.btn);
+  onYolo(s.yolo);
+  if (s.notify && s.notify.t != null) {
+    if (lastNotifyT !== null && s.notify.t !== lastNotifyT) pulse('blue', PULSE_MS, 1, 300);
+    lastNotifyT = s.notify.t;
+  }
+}
+
+// ── cervena: zaznam bezi -> dech kazde 3 s ──
+let recActive = false;
+async function pollRec() {
+  try { recActive = !!(await (await fetch('/rec/status', { cache: 'no-store' })).json()).active; }
+  catch (e) {}
+}
+setInterval(pollRec, 1000); pollRec();
+setInterval(() => { if (recActive && !TEST) pulse('red', 600, 0.8, 2500); }, 3000);
+
+// ── data: WebSocket, zaloha HTTP polling ──
+let ws = null, wsOpen = false;
+function connect() {
+  try { ws = new WebSocket(`ws://${HOST}:8765`); } catch (e) { setTimeout(connect, 3000); return; }
+  ws.onopen = () => { wsOpen = true; };
+  ws.onmessage = e => { try { onState(JSON.parse(e.data)); } catch (_) {} };
+  ws.onclose = () => { wsOpen = false; setTimeout(connect, 3000); };
+  ws.onerror = () => { try { ws.close(); } catch (_) {} };
+}
+connect();
+let busy = false;
+setInterval(async () => {
+  if (wsOpen || busy) return;
+  busy = true;
+  try {
+    const [s, y] = await Promise.all([
+      fetch('/state', { cache: 'no-store' }).then(r => r.json()).catch(() => null),
+      fetch('/yolo.json', { cache: 'no-store' }).then(r => r.json()).catch(() => null)]);
+    if (s) onBtn(s.btn);
+    if (y && y.running) onYolo(y); else if (s) onYolo(s.yolo);
+  } finally { busy = false; }
+}, 200);
+
+// ── test: kazde 2 s dalsi barva ──
+if (TEST) {
+  const seq = ['orange', 'red', 'blue']; let i = 0;
+  setInterval(() => { pulse(seq[i % 3], PULSE_MS, 1, 0); i++; }, 2000);
+  document.getElementById('dbg').textContent = `TEST zare (${SIDE === 'right' ? 'leve' : 'prave'} oko)`;
+}
+</script>
+</body>
+</html>

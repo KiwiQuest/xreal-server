@@ -1,0 +1,4 @@
+numpy
+opencv-python
+ultralytics
+# torch si ultralytics nainstaluje sam (CPU). Pro NVIDIA GPU viz https://pytorch.org/get-started/locally/

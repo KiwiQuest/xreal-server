@@ -1,0 +1,4 @@
+# Zakladni program (okno, kurzor, klikani, psani Dasher) nepotrebuje ZADNE knihovny - jen Python 3.10+ s tkinter.
+# Volitelne (kamera Eye přes UVC a YOLO):
+numpy
+opencv-python

@@ -1,0 +1,5 @@
+{
+  "size": "n",
+  "task": "seg",
+  "backend": "openvino:npu"
+}

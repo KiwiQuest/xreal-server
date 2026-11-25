@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Slovníky a věty</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  html, body { background:#000; color:#fff; font-family:Arial,Helvetica,sans-serif; }
+  body { padding:0 0 80px; }
+  header { position:sticky; top:0; z-index:5; background:#000; border-bottom:2px solid #00ff80; padding:10px 12px;
+    display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  h1 { font-size:20px; color:#00ff80; margin-right:auto; font-family:'Courier New',monospace; }
+  button { font:bold 16px Arial,Helvetica,sans-serif; color:#fff; background:#002a14; border:2px solid #00ff80;
+    border-radius:8px; padding:0 14px; height:44px; cursor:pointer; touch-action:manipulation; }
+  button:active { background:#00ff80; color:#000; }
+  button.on { background:#00ff80; color:#000; }
+  button.danger { border-color:#ff5060; background:#200008; }
+  #status { font-size:14px; color:#7dffc0; min-width:110px; text-align:right; }
+  #status.err { color:#ff6070; }
+  .tabs { display:flex; gap:8px; padding:10px 12px 0; flex-wrap:wrap; }
+  .tabs button { height:48px; font-size:17px; }
+  .tabs button .n { font-size:13px; color:#7dffc0; margin-left:6px; }
+  .tabs button.on .n { color:#004020; }
+  .tools { display:flex; gap:8px; padding:10px 12px; flex-wrap:wrap; align-items:center; }
+  input[type=search], input.key, textarea {
+    font:18px Arial,Helvetica,sans-serif; color:#fff; background:#06110b; border:2px solid #2bd47a;
+    border-radius:8px; padding:8px 10px; outline:none; }
+  input[type=search] { flex:1; min-width:180px; height:44px; }
+  input:focus, textarea:focus { border-color:#ffd200; }
+  .hint { color:#7dbf9a; font-size:14px; padding:0 14px 6px; line-height:1.45; }
+  .hint b { color:#ffd200; }
+  #list { padding:4px 12px; display:flex; flex-direction:column; gap:10px; }
+  .item { border:2px solid #1f6a45; border-radius:10px; padding:10px; display:flex; flex-direction:column; gap:8px; background:#020a06; }
+  .item.pin { border-color:#ffd200; }
+  .item textarea { width:100%; resize:vertical; min-height:46px; line-height:1.35; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .row label { font-size:14px; color:#7dbf9a; }
+  input.key { width:130px; height:42px; font-size:16px; }
+  .uses { font-size:13px; color:#7dbf9a; margin-left:auto; }
+  .row button { height:42px; padding:0 12px; font-size:15px; }
+  .pinb.on { background:#ffd200; color:#000; border-color:#ffd200; }
+  #bulk { display:none; padding:0 12px 10px; }
+  #bulk.visible { display:block; }
+  #bulk textarea { width:100%; min-height:180px; }
+  #toast { position:fixed; left:50%; bottom:16px; transform:translateX(-50%); background:#002a14; border:2px solid #00ff80;
+    border-radius:10px; padding:10px 14px; display:none; gap:12px; align-items:center; font-size:16px; z-index:9; }
+  #toast.visible { display:flex; }
+  .empty { color:#5fa880; padding:20px 4px; font-size:16px; }
+  .lw { display:flex; align-items:center; gap:10px; border-bottom:1px solid #0d3a22; padding:6px 2px; font-size:18px; }
+  .lw .c { color:#7dbf9a; font-size:14px; width:60px; text-align:right; }
+  .lw .w { flex:1; }
+  .vars { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .vars button { height:36px; font-size:14px; padding:0 10px; border-color:#ffd200; background:#141000; }
+  .vars button:active { background:#ffd200; color:#000; }
+  .vinfo { font-size:14px; color:#ffd200; }
+  .vinfo .a { color:#7dffc0; }
+  kbd { font:13px 'Courier New',monospace; border:1px solid #2bd47a; border-radius:4px; padding:0 5px; color:#7dffc0; }
+  .keys { color:#5fa880; font-size:13px; padding:0 14px 8px; }
+</style>
+</head>
+<body>
+<header>
+  <button id="back">← ZPĚT</button>
+  <h1>📝 SLOVNÍKY A VĚTY</h1>
+  <span id="status"></span>
+  <button id="save">ULOŽIT</button>
+</header>
+
+<div class="tabs" id="tabs">
+  <button data-l="words">Slova<span class="n"></span></button>
+  <button data-l="phrases">Části vět<span class="n"></span></button>
+  <button data-l="sentences">Celé věty / prompty<span class="n"></span></button>
+  <button data-l="learned">Naučená<span class="n"></span></button>
+</div>
+<div class="tools">
+  <input type="search" id="q" placeholder="hledat…">
+  <button id="add">+ PŘIDAT</button>
+  <button id="sort">ŘADIT: VLASTNÍ</button>
+  <button id="bulkb">HROMADNĚ</button>
+</div>
+<div class="hint" id="hint"></div>
+<div class="keys"><kbd>Ctrl+S</kbd> uložit · <kbd>Ctrl+Enter</kbd> nová položka · <kbd>Ctrl+F</kbd> hledat ·
+  <kbd>Alt+1…4</kbd> záložky · <kbd>Alt+↑↓</kbd> posunout položku · <kbd>Ctrl+Del</kbd> smazat položku</div>
+<div id="bulk">
+  <div class="hint">Vlož víc položek najednou – <b>jedna na řádek</b> (u vět můžeš oddělit víceřádkové věty řádkem <b>---</b>).
+    Text níž je zároveň export – zkopíruj si ho.</div>
+  <textarea id="bulk-t"></textarea>
+  <div class="row" style="margin-top:8px">
+    <button id="bulk-add">PŘIDAT Z TEXTU</button>
+    <button id="bulk-replace" class="danger">NAHRADIT CELÝ SEZNAM</button>
+    <button id="bulk-close">ZAVŘÍT</button>
+  </div>
+</div>
+<div id="list"></div>
+<div id="toast"><span id="toast-t"></span><button id="undo">VRÁTIT</button></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const HINTS = {
+  words: 'Slova, která má klávesnice nabízet při psaní. Nabízí se i bez diakritiky (<b>prilis</b> → příliš).',
+  phrases: 'Části vět – nabídnou se, když napíšeš jejich začátek (i přes víc slov). Můžou obsahovat stejné proměnné jako věty ({jméno}, {volba: a|b}, {datum}…).',
+  sentences: 'Celé věty a prompty – šablony: <b>{jméno}</b> = při vložení napíšeš, <b>{volba: krátce|podrobně}</b> = vybereš, ' +
+    '<b>{datum} {čas} {den}</b> = doplní se samo, <b>{schránka}</b> = obsah schránky PC, <b>{}</b> = kurzor, <b>{{ }}</b> = obyčejné závorky. ' +
+    'Nový řádek se vloží jako Shift+Enter. <b>★</b> = oblíbená (panel ★ na tabletu). <b>Zkratka</b> (např. shr) = napiš ji a věta je první návrh.',
+  learned: 'Slova, která ses naučil psaním (počet použití). Můžeš je přesunout do slovníku nebo smazat.',
+};
+let D = { words: [], phrases: [], sentences: [], learned: {} };
+let tab = 'sentences', sortUses = false, dirty = false, saveT = null, undo = null;
+try { tab = localStorage.getItem('phrTab') || 'sentences'; } catch (e) {}
+
+const uid = () => Date.now().toString(16) + Math.random().toString(16).slice(2, 6);
+function status(t, err) { $('status').textContent = t; $('status').classList.toggle('err', !!err); }
+function load() {
+  status('načítám…');
+  fetch('/phrases.json').then(r => r.json()).then(d => { D = d; status(''); render(); })
+    .catch(() => status('server nedostupný', true));
+}
+function save() {
+  clearTimeout(saveT);
+  status('ukládám…');
+  fetch('/phrases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(D) })
+    .then(r => { if (!r.ok) throw 0; return r.json(); })
+    .then(d => { D.learned = d.learned; dirty = false; status('uloženo ✓'); counts(); })
+    .catch(() => status('NEULOŽENO – server?', true));
+}
+function changed() { dirty = true; status('neuloženo…'); clearTimeout(saveT); saveT = setTimeout(save, 900); counts(); }
+function counts() {
+  for (const b of $('tabs').children) {
+    const l = b.dataset.l;
+    b.querySelector('.n').textContent = l === 'learned' ? Object.keys(D.learned || {}).length : (D[l] || []).length;
+    b.classList.toggle('on', l === tab);
+  }
+}
+function toast(t, undoFn) {
+  $('toast-t').textContent = t; undo = undoFn;
+  $('undo').style.display = undoFn ? '' : 'none';
+  $('toast').classList.add('visible');
+  clearTimeout(toast.h); toast.h = setTimeout(() => $('toast').classList.remove('visible'), 6000);
+}
+$('undo').onclick = () => { if (undo) { undo(); undo = null; } $('toast').classList.remove('visible'); };
+function grow(t) { t.style.height = 'auto'; t.style.height = (t.scrollHeight + 4) + 'px'; }
+
+function render() {
+  counts();
+  $('hint').innerHTML = HINTS[tab];
+  $('add').style.display = tab === 'learned' ? 'none' : '';
+  $('sort').style.display = tab === 'learned' ? 'none' : '';
+  $('bulkb').style.display = tab === 'learned' ? 'none' : '';
+  const q = $('q').value.trim().toLowerCase();
+  const list = $('list'); list.innerHTML = '';
+  if (tab === 'learned') {
+    const ent = Object.entries(D.learned || {}).filter(([w]) => !q || w.toLowerCase().includes(q)).sort((a, b) => b[1] - a[1]);
+    if (!ent.length) list.innerHTML = '<div class="empty">Zatím nic – slova se učí, když píšeš na klávesnici tabletu.</div>';
+    const top = document.createElement('div'); top.className = 'row';
+    if (ent.length) {
+      const all = document.createElement('button'); all.className = 'danger'; all.textContent = 'SMAZAT VŠE NAUČENÉ';
+      all.onclick = () => { const old = D.learned; D.learned = {}; changed(); render(); toast('Naučená slova smazána', () => { D.learned = old; changed(); render(); }); };
+      top.appendChild(all); list.appendChild(top);
+    }
+    for (const [w, c] of ent.slice(0, 600)) {
+      const r = document.createElement('div'); r.className = 'lw';
+      r.innerHTML = `<span class="c">${c}×</span><span class="w"></span>`;
+      r.querySelector('.w').textContent = w;
+      const p = document.createElement('button'); p.textContent = '→ DO SLOV';
+      p.onclick = () => { D.words.unshift({ id: uid(), text: w, key: '', pin: false, uses: c }); delete D.learned[w]; changed(); render(); toast(`„${w}“ přidáno do slov`); };
+      const x = document.createElement('button'); x.className = 'danger'; x.textContent = '🗑';
+      x.onclick = () => { delete D.learned[w]; changed(); render(); toast(`„${w}“ smazáno`, () => { D.learned[w] = c; changed(); render(); }); };
+      r.appendChild(p); r.appendChild(x); list.appendChild(r);
+    }
+    return;
+  }
+  let items = (D[tab] || []).map((it, i) => ({ it, i }));
+  if (q) items = items.filter(({ it }) => it.text.toLowerCase().includes(q) || (it.key || '').toLowerCase().includes(q));
+  if (sortUses) items.sort((a, b) => (b.it.pin - a.it.pin) || (b.it.uses - a.it.uses));
+  if (!items.length) list.innerHTML = '<div class="empty">' + (q ? 'Nic nenalezeno.' : 'Prázdné – přidej první položku tlačítkem + PŘIDAT.') + '</div>';
+  for (const { it, i } of items) list.appendChild(card(it, i));
+}
+
+function card(it, i) {
+  const el = document.createElement('div');
+  el.className = 'item' + (it.pin ? ' pin' : '');
+  const ta = document.createElement('textarea');
+  ta.value = it.text; ta.rows = tab === 'sentences' ? 2 : 1;
+  ta.placeholder = tab === 'words' ? 'slovo' : tab === 'phrases' ? 'část věty' : 'celá věta / prompt – {} = kurzor';
+  ta.oninput = () => { it.text = ta.value; grow(ta); changed(); vinfoUpd(); };
+  ta._item = it; ta._idx = i;
+  el.appendChild(ta);
+  let vinfoUpd = () => {};
+  if (tab !== 'words') {
+    const vb = document.createElement('div'); vb.className = 'vars';
+    const ins = t => {                                  // vlozit na misto kurzoru
+      const a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? a;
+      let txt = t;
+      if (t === '{?}') { const n = prompt('Název proměnné (např. jméno, firma, téma):', ''); if (!n) return; txt = `{${n.trim()}}`; }
+      if (t === '{?|}') { const n = prompt('Možnosti oddělené | (např. krátce|podrobně|v bodech):', ''); if (!n) return;
+        const nm = prompt('Název volby (nepovinné):', '') || ''; txt = `{${nm ? nm.trim() + ': ' : ''}${n.trim()}}`; }
+      ta.setRangeText(txt, a, b, 'end'); ta.focus(); ta.dispatchEvent(new Event('input'));
+    };
+    for (const [lab, t, title] of [['{} kurzor', '{}', 'sem se postaví kurzor'], ['+ proměnná', '{?}', 'text, který napíšeš při vložení'],
+      ['+ volba', '{?|}', 'výběr z možností'], ['{datum}', '{datum}', ''], ['{čas}', '{čas}', ''], ['{den}', '{den}', ''],
+      ['{schránka}', '{schránka}', 'obsah schránky PC v okamžiku vložení']]) {
+      const b = document.createElement('button'); b.textContent = lab; b.title = title || ('vložit ' + t);
+      b.onmousedown = e => e.preventDefault();          // neztratit kurzor v textu
+      b.onclick = () => ins(t); vb.appendChild(b);
+    }
+    const vi = document.createElement('span'); vi.className = 'vinfo'; vb.appendChild(vi);
+    vinfoUpd = () => {
+      const t = ta.value.replace(/\{\{|\}\}/g, ''), fillv = [], auto = [];
+      for (const m of t.matchAll(/\{([^{}]*)\}/g)) {
+        const r = m[1].trim(), lo = r.toLowerCase();
+        if (!r) auto.push('kurzor');
+        else if (['datum', 'čas', 'cas', 'den', 'schránka', 'schranka'].includes(lo)) auto.push(lo);
+        else if (r.includes('|')) { const ci = r.indexOf(':'); fillv.push(`${ci >= 0 ? r.slice(0, ci).trim() : 'volba'} (${r.slice(ci + 1).split('|').filter(x => x.trim()).length})`); }
+        else fillv.push(r);
+      }
+      vi.innerHTML = (fillv.length ? 'doplníš: ' + [...new Set(fillv)].join(', ').replace(/[<>&]/g, '') : '')
+        + (auto.length ? ` <span class="a">· samo: ${[...new Set(auto)].join(', ')}</span>` : '');
+    };
+    vinfoUpd();
+    el.appendChild(vb);
+  }
+  const row = document.createElement('div'); row.className = 'row';
+  const kl = document.createElement('label'); kl.textContent = 'zkratka';
+  const key = document.createElement('input'); key.className = 'key'; key.value = it.key || ''; key.placeholder = 'např. shr';
+  key.oninput = () => { it.key = key.value.trim(); changed(); };
+  const pin = document.createElement('button'); pin.className = 'pinb' + (it.pin ? ' on' : ''); pin.textContent = '★';
+  pin.title = 'oblíbená – nabízí se i bez psaní';
+  pin.onclick = () => { it.pin = !it.pin; changed(); render(); };
+  const up = document.createElement('button'); up.textContent = '↑'; up.title = 'posunout nahoru';
+  const dn = document.createElement('button'); dn.textContent = '↓'; dn.title = 'posunout dolů';
+  const mv = d => { const L = D[tab], j = i + d; if (j < 0 || j >= L.length) return; [L[i], L[j]] = [L[j], L[i]]; changed(); render(); };
+  up.onclick = () => mv(-1); dn.onclick = () => mv(1);
+  if (sortUses) { up.disabled = dn.disabled = true; up.style.opacity = dn.style.opacity = 0.3; }
+  const del = document.createElement('button'); del.className = 'danger'; del.textContent = '🗑';
+  del.onclick = () => {
+    const L = D[tab], idx = L.indexOf(it); if (idx < 0) return;
+    L.splice(idx, 1); changed(); render();
+    toast('Smazáno: ' + it.text.slice(0, 40), () => { L.splice(idx, 0, it); changed(); render(); });
+  };
+  const uses = document.createElement('span'); uses.className = 'uses'; uses.textContent = `použito ${it.uses || 0}×`;
+  row.append(kl, key, pin, up, dn, del, uses);
+  el.appendChild(row);
+  setTimeout(() => grow(ta), 0);
+  return el;
+}
+
+$('tabs').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  tab = b.dataset.l; try { localStorage.setItem('phrTab', tab); } catch (e2) {}
+  $('bulk').classList.remove('visible'); render();
+};
+$('q').oninput = render;
+$('add').onclick = () => {
+  const it = { id: uid(), text: '', key: '', pin: false, uses: 0 };
+  D[tab].unshift(it); $('q').value = ''; render();
+  const t = $('list').querySelector('textarea'); if (t) t.focus();
+};
+$('sort').onclick = () => { sortUses = !sortUses; $('sort').textContent = sortUses ? 'ŘADIT: POUŽÍVANÉ' : 'ŘADIT: VLASTNÍ'; render(); };
+$('save').onclick = save;
+function bulkText() {
+  const L = D[tab] || [];
+  return tab === 'sentences' ? L.map(x => x.text).join('\n---\n') : L.map(x => x.text).join('\n');
+}
+function bulkParse(t) {
+  const parts = tab === 'sentences' && /\n---\n/.test(t) ? t.split(/\n---\n/) : t.split(/\n/);
+  return parts.map(x => x.trim()).filter(Boolean);
+}
+$('bulkb').onclick = () => { $('bulk').classList.toggle('visible'); $('bulk-t').value = bulkText(); };
+$('bulk-close').onclick = () => $('bulk').classList.remove('visible');
+$('bulk-add').onclick = () => {
+  const have = new Set(D[tab].map(x => x.text.toLowerCase()));
+  const add = bulkParse($('bulk-t').value).filter(x => !have.has(x.toLowerCase()));
+  for (const x of add.reverse()) D[tab].unshift({ id: uid(), text: x, key: '', pin: false, uses: 0 });
+  changed(); render(); toast(`Přidáno ${add.length} položek`);
+  $('bulk-t').value = bulkText();
+};
+$('bulk-replace').onclick = () => {
+  const old = D[tab], items = bulkParse($('bulk-t').value);
+  const byText = new Map(old.map(x => [x.text, x]));
+  D[tab] = items.map(x => byText.get(x) || { id: uid(), text: x, key: '', pin: false, uses: 0 });
+  changed(); render(); toast(`Seznam nahrazen (${items.length})`, () => { D[tab] = old; changed(); render(); });
+};
+$('back').onclick = () => {
+  if (dirty) save();
+  setTimeout(() => {
+    if (new URLSearchParams(location.search).get('from') === 'tablet') location.href = '/tablet.html';
+    else if (history.length > 1) history.back(); else location.href = '/tablet.html';
+  }, dirty ? 400 : 0);
+};
+addEventListener('beforeunload', () => { if (dirty) navigator.sendBeacon && navigator.sendBeacon('/phrases', new Blob([JSON.stringify(D)], { type: 'application/json' })); });
+// klavesove zkratky (v brylich se pise tabletovou klavesnici)
+addEventListener('keydown', e => {
+  const ta = document.activeElement && document.activeElement._item ? document.activeElement : null;
+  if (e.ctrlKey && (e.key === 's' || e.key === 'S')) { e.preventDefault(); save(); }
+  else if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); $('add').click(); }
+  else if (e.ctrlKey && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); $('q').focus(); $('q').select(); }
+  else if (e.altKey && /^[1-4]$/.test(e.key)) { e.preventDefault(); $('tabs').children[+e.key - 1].click(); }
+  else if (ta && e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && !sortUses) {
+    e.preventDefault();
+    const L = D[tab], i = L.indexOf(ta._item), j = i + (e.key === 'ArrowUp' ? -1 : 1);
+    if (i < 0 || j < 0 || j >= L.length) return;
+    [L[i], L[j]] = [L[j], L[i]]; changed(); render();
+    const t = [...$('list').querySelectorAll('textarea')].find(x => x._item === L[j]); if (t) t.focus();
+  } else if (ta && e.ctrlKey && e.key === 'Delete') {
+    e.preventDefault();
+    const it = ta._item, L = D[tab], idx = L.indexOf(it); if (idx < 0) return;
+    L.splice(idx, 1); changed(); render();
+    toast('Smazáno: ' + it.text.slice(0, 40), () => { L.splice(idx, 0, it); changed(); render(); });
+  }
+});
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,1505 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>XREAL Remote</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { width:100%; height:100%; background:#0a0f1a; color:#00ff80;
+    font-family:'Courier New',monospace; overflow:hidden; user-select:none; }
+
+  /* ── TOP BAR ── */
+  #topbar {
+    position:fixed; top:0; left:0; right:0; height:52px;
+    background:rgba(0,20,10,0.95); border-bottom:1px solid #0a3020;
+    display:flex; align-items:center; gap:8px; padding:0 12px; z-index:10;
+  }
+  .mod-btn {
+    background:#0d2a1a; border:1px solid #00ff80; color:#00ff80;
+    font-family:'Courier New',monospace; font-size:15px; padding:6px 13px;
+    border-radius:6px; cursor:pointer; touch-action:manipulation; flex:none;
+  }
+  .mod-btn.head-on { background:#ffd200; color:#000; border-color:#ffd200; }
+  @media (max-width: 700px) {
+    #topbar { gap:5px; padding:0 6px; }
+    .mod-btn { font-size:13px; padding:6px 8px; }
+    #imu-status { display:none; }
+  }
+  .mod-btn:active { background:#00ff80; color:#000; }
+  #mod-label { flex:1; min-width:0; text-align:center; font-size:13px; color:#3a8a5a;
+    overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  #imu-status { font-size:12px; color:#2a6a4a; white-space:nowrap; }
+  #imu-status.ok { color:#00ff80; }
+  #imu-status.err { color:#ff5050; }
+
+  /* ── TOUCHPAD ── */
+  #touchpad {
+    position:fixed; top:52px; left:0; right:0; bottom:72px;
+    background:#050d14;
+    cursor:crosshair; touch-action:none;
+  }
+  #touchpad-hint {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    color:#0d2a1a; font-size:14px; text-align:center; pointer-events:none;
+    line-height:2;
+  }
+  /* obraz z XREAL Eye pod touchpadem */
+  #cam {
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    object-fit:contain; pointer-events:none; display:none; z-index:0;
+  }
+  #touchpad > :not(#cam) { position:absolute; z-index:1; }
+  .mod-btn.on { background:#00ff80; color:#000; }
+  /* vizuální ripple při tapnutí */
+  .ripple {
+    position:absolute; border-radius:50%; background:rgba(0,255,128,0.2);
+    width:60px; height:60px; margin:-30px 0 0 -30px;
+    animation:rpl 0.4s ease-out forwards; pointer-events:none;
+  }
+  @keyframes rpl { from{opacity:1;transform:scale(0.3)} to{opacity:0;transform:scale(2)} }
+
+  /* crosshair na touchpadu */
+  #tp-cross {
+    position:absolute; pointer-events:none; display:none;
+  }
+  #tp-cross::before, #tp-cross::after {
+    content:''; position:absolute; background:rgba(0,255,128,0.4);
+  }
+  #tp-cross::before { width:1px; height:24px; top:-12px; left:0; }
+  #tp-cross.drag::before, #tp-cross.drag::after { background:#ff8c1a; }
+  #tp-cross.drag::before { width:3px; } #tp-cross.drag::after { height:3px; }
+  #tp-cross::after  { width:24px; height:1px; left:-12px; top:0; }
+
+  /* ── BOTTOM BAR ── */
+  #bottombar {
+    position:fixed; bottom:0; left:0; right:0; height:72px;
+    background:rgba(0,20,10,0.97); border-top:1px solid #0a3020;
+    display:flex; align-items:center; gap:6px; padding:0 10px; z-index:10;
+  }
+  .btn {
+    flex:1; height:52px; background:#0d2a1a; border:1px solid #1a5030;
+    color:#00ff80; font-family:'Courier New',monospace; font-size:13px;
+    border-radius:8px; cursor:pointer; touch-action:manipulation;
+    display:flex; align-items:center; justify-content:center; gap:4px;
+  }
+  .btn:active { background:#00aa55; color:#000; border-color:#00ff80; }
+  .btn.danger { border-color:#3a1010; color:#ff5050; background:#1a0808; }
+  .btn.danger:active { background:#ff3030; color:#000; }
+  .btn.active { background:#004020; border-color:#00ff80; }
+  .btn.drag-on, .kh.drag-on { background:#ff8c1a !important; color:#000 !important; border-color:#ffd200 !important; }
+  .btn-icon { font-size:20px; line-height:1; }
+  .btn-label { font-size:10px; opacity:0.7; }
+
+  /* ── KLAVESNICE (plna PC klavesnice, vysoky kontrast - citelna i pres ztmavena skla) ── */
+  :root { --kh: 62vh; --kfs: 22px; }
+  @media (orientation: portrait) { :root { --kh: 50vh; } }
+  #kbd-overlay {
+    position:fixed; bottom:0; left:0; right:0; height:var(--kh);
+    background:#000; border-top:2px solid #00ff80;
+    padding:5px 5px 6px; z-index:20; display:none; flex-direction:column; gap:5px;
+    touch-action:none;
+  }
+  #kbd-overlay.visible { display:flex; }
+  body.kbd #touchpad, body.kbd #sens-row { bottom:var(--kh); }
+  body.kbd #bottombar { display:none; }
+  body.kbdfull #kbd-overlay { top:0; height:auto; border-top:none; }
+  #kbd-head { display:flex; gap:6px; align-items:center; height:36px; flex:none; }
+  body.kbdfull #kbd-head { height:50px; }
+  #kbd-preview { flex:1; min-width:0; overflow:hidden; white-space:nowrap; direction:rtl; text-align:left;
+    font-size:18px; color:#fff; padding:0 8px; border:1px solid #1d5a3a; border-radius:6px; height:100%;
+    display:flex; align-items:center; background:#06110b; }
+  body.kbdfull #kbd-preview { font-size:24px; }
+  #kbd-preview span { direction:ltr; unicode-bidi:bidi-override; }
+  .kh { background:#002a14; border:2px solid #00ff80; color:#fff; border-radius:6px; font-weight:bold;
+    font-family:'Courier New',monospace; font-size:15px; padding:0 12px; height:100%; flex:none; }
+  body.kbdfull .kh { font-size:18px; padding:0 16px; }
+  .kh:active, .kh.on { background:#00ff80; color:#000; }
+  .kh.head-on { background:#ffd200; color:#000; border-color:#ffd200; }
+  .kh.full-only { display:none; }
+  body.kbdfull .kh.full-only { display:block; }
+  #kbd-text { display:none; gap:6px; flex:none; }
+  #kbd-text.visible { display:flex; }
+  #kbd-input {
+    flex:1; background:#06110b; border:2px solid #00ff80;
+    color:#fff; font-family:'Courier New',monospace; font-size:20px;
+    padding:8px 12px; border-radius:6px; outline:none; user-select:text;
+  }
+  #kbd-input::placeholder { color:#3a7a5a; }
+  #kbd-send { background:#003a20; border:2px solid #00ff80; color:#fff; font-weight:bold;
+    font-family:'Courier New',monospace; font-size:16px; border-radius:6px; padding:0 16px; }
+  #kbd-send:active { background:#00ff80; color:#000; }
+  #kbd-keys { flex:1; display:flex; flex-direction:column; gap:5px; min-height:0; }
+  .krow { flex:1; display:flex; gap:5px; min-height:0; }
+  .key {
+    flex:1 1 0; min-width:0; background:#000; border:2px solid #2bd47a; border-radius:7px;
+    color:#fff; font-family:Arial,Helvetica,sans-serif; font-weight:bold; font-size:var(--kfs);
+    display:flex; align-items:center; justify-content:center; position:relative;
+    touch-action:none; user-select:none; overflow:hidden; line-height:1;
+  }
+  .key.sp { color:#7dffc0; font-size:calc(var(--kfs) * 0.62); background:#03140b; border-color:#1f9a5a; }
+  .key .alt { position:absolute; top:3px; right:5px; font-size:calc(var(--kfs) * 0.5); color:#ffd200; }
+  .key.down { background:#00ff80; color:#000; border-color:#fff; }
+  .key.on   { background:#0f6a3a; border-color:#fff; color:#fff; }
+  .key.lock { background:#00ff80; color:#000; border-color:#fff; }
+  .key.dead { border-color:#ffd200; color:#ffd200; }
+  .key.fn-on { background:#ffd200; color:#000; border-color:#ffd200; }
+
+  /* ── NAVRHY nad klavesnici ── */
+  #sugg { display:none; gap:6px; flex:none; height:46px; align-items:stretch; }
+  body.kbdfull #sugg { height:60px; }
+  #sugg.visible { display:flex; }
+  #sg-list { flex:1; min-width:0; display:flex; gap:6px; overflow:hidden; }
+  .sg { flex:none; max-width:46%; display:flex; align-items:center; gap:6px; padding:0 14px;
+    background:#000; border:2px solid #2bd47a; border-radius:8px; color:#fff;
+    font:bold 19px Arial,Helvetica,sans-serif; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    touch-action:none; }
+  body.kbdfull .sg { font-size:23px; }
+  .sg .ty { font-size:12px; color:#7dffc0; font-weight:normal; flex:none; }
+  .sg .tx { overflow:hidden; text-overflow:ellipsis; }
+  .sg.hi { background:#ffd200; color:#000; border-color:#fff; }
+  .sg.hi .ty { color:#333; }
+  .sg.down { background:#00ff80; color:#000; }
+  .sgb { flex:none; width:52px; background:#002a14; border:2px solid #00ff80; color:#fff; border-radius:8px;
+    font:bold 20px Arial,Helvetica,sans-serif; }
+  body.kbdfull .sgb { width:64px; font-size:24px; }
+  .sgb:active { background:#00ff80; color:#000; }
+  #sg-empty { color:#3a7a5a; font-size:15px; align-self:center; padding-left:6px; }
+
+  /* ── VYPLNENI SABLONY (klavesnice pise sem, ne do PC) ── */
+  #fill { display:none; flex:none; flex-direction:column; gap:5px; border:2px solid #ffd200; border-radius:8px;
+    padding:6px 8px; background:#0d0b00; }
+  #fill.visible { display:flex; }
+  #fill-prev { font:16px Arial,Helvetica,sans-serif; color:#cfcfcf; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  body.kbdfull #fill-prev { font-size:19px; }
+  #fill-prev .v { color:#000; background:#ffd200; padding:0 4px; border-radius:3px; }
+  #fill-prev .vd { color:#ffd200; }
+  .fill-row { display:flex; gap:6px; align-items:stretch; height:46px; }
+  body.kbdfull .fill-row { height:56px; }
+  #fill-label { flex:none; align-self:center; color:#ffd200; font:bold 17px Arial,Helvetica,sans-serif; max-width:30%;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #fill-val { flex:1; min-width:0; background:#000; border:2px solid #ffd200; border-radius:7px; color:#fff;
+    font:bold 21px Arial,Helvetica,sans-serif; display:flex; align-items:center; padding:0 10px; overflow:hidden;
+    white-space:nowrap; direction:rtl; }
+  #fill-val span { direction:ltr; unicode-bidi:bidi-override; }
+  #fill-val span::after { content:'▏'; color:#ffd200; animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+  #fill-opts { display:flex; gap:6px; overflow-x:auto; min-height:0; }
+  #fill-opts:empty { display:none; }
+  .fo { flex:none; height:42px; padding:0 14px; background:#000; border:2px solid #ffd200; border-radius:7px; color:#fff;
+    font:bold 18px Arial,Helvetica,sans-serif; white-space:nowrap; }
+  .fo.hist { border-color:#7a6a20; color:#e8e0b0; font-weight:normal; }
+  .fo:active, .fo.sel { background:#ffd200; color:#000; }
+  .fb { flex:none; padding:0 14px; background:#1a1600; border:2px solid #ffd200; color:#fff; border-radius:7px;
+    font:bold 17px Arial,Helvetica,sans-serif; }
+  .fb:active { background:#ffd200; color:#000; }
+
+  /* ── PANEL OBLIBENYCH ── */
+  #favs { position:fixed; inset:0; background:#000; z-index:35; display:none; flex-direction:column; }
+  #favs.visible { display:flex; }
+  #favs-head { flex:none; display:flex; gap:8px; align-items:center; padding:8px; border-bottom:2px solid #00ff80; }
+  #favs-head .t { color:#ffd200; font:bold 20px 'Courier New',monospace; margin-right:auto; }
+  #favs-grid { flex:1; overflow-y:auto; padding:8px; display:grid; gap:8px;
+    grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); align-content:start; touch-action:pan-y; }
+  .fav { min-height:92px; background:#000; border:2px solid #2bd47a; border-radius:10px; color:#fff; text-align:left;
+    padding:10px 12px; font:bold 18px Arial,Helvetica,sans-serif; line-height:1.3; display:flex; flex-direction:column; gap:6px; }
+  .fav.pin { border-color:#ffd200; }
+  .fav:active { background:#00ff80; color:#000; }
+  .fav .tx { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+  .fav .mt { font:normal 13px Arial,Helvetica,sans-serif; color:#7dffc0; margin-top:auto; }
+  .fav .mt b { color:#ffd200; }
+  #favs-empty { color:#7dbf9a; padding:20px; font-size:17px; }
+
+  /* ── AR KALIBRACE: znacka pro kameru + potvrzeni ── */
+  #calibp { position:fixed; inset:0; z-index:45; display:none; flex-direction:column; background:#fff; }
+  #calibp.visible { display:flex; }
+  #calibp .mk { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; background:#fff; padding:6px; }
+  #calibp .mk img { max-width:100%; max-height:100%; aspect-ratio:1; image-rendering:pixelated; }
+  #calibp .bar { flex:none; background:#000; display:flex; flex-direction:column; gap:6px; padding:8px; }
+  #calib-st { color:#fff; font:bold 18px Arial,Helvetica,sans-serif; text-align:center; }
+  #calib-st .ok { color:#00ff80; } #calib-st .no { color:#ff8060; }
+  #calibp .row { display:flex; gap:8px; height:64px; }
+  #calibp button { font:bold 18px Arial,Helvetica,sans-serif; color:#fff; background:#002a14; border:2px solid #00ff80;
+    border-radius:10px; flex:1; touch-action:none; }
+  #calibp button:active { background:#00ff80; color:#000; }
+  #cal-ok { flex:2.6 !important; font-size:24px !important; background:#00602a !important; }
+  @media (orientation: landscape) {
+    #calibp { flex-direction:row; }
+    #calibp .bar { width:300px; justify-content:center; }
+    #calibp .row { flex-direction:column; height:auto; flex:1; }
+  }
+
+  /* ── NASTAVENI ── */
+  #settings { position:fixed; inset:0; background:#000; z-index:40; display:none;
+    overflow-y:auto; padding:14px; touch-action:pan-y; }
+  #settings.visible { display:block; }
+  #settings .panel { max-width:760px; margin:0 auto; }
+  #settings h2 { font-size:20px; color:#00ff80; margin:4px 0 10px; display:flex; align-items:center; }
+  #settings h2 button { margin-left:auto; }
+  #settings h3 { font-size:15px; color:#ffd200; margin:16px 0 6px; letter-spacing:1px; }
+  .srow { display:flex; align-items:center; gap:12px; padding:9px 4px; border-bottom:1px solid #0d3a22;
+    font-size:16px; color:#fff; }
+  .srow label { flex:1; }
+  .srow .val { width:56px; text-align:right; color:#ffd200; font-weight:bold; }
+  .srow input[type=range] { flex:1.4; accent-color:#00ff80; height:28px; }
+  .tog { min-width:96px; height:40px; background:#000; border:2px solid #2bd47a; color:#fff; border-radius:7px;
+    font:bold 15px 'Courier New',monospace; }
+  .tog.on { background:#00ff80; color:#000; border-color:#fff; }
+  .sbtn { height:40px; padding:0 14px; background:#002a14; border:2px solid #00ff80; color:#fff; border-radius:7px;
+    font:bold 15px 'Courier New',monospace; }
+  .sbtn:active { background:#00ff80; color:#000; }
+  .shint { font-size:13px; color:#5fa880; padding:4px 4px 0; line-height:1.4; }
+
+  /* ── SENS SLIDER ── */
+  #sens-row {
+    position:fixed; top:52px; right:0; width:36px; bottom:72px;
+    display:flex; align-items:center; justify-content:center;
+    z-index:5; pointer-events:none;
+  }
+  #sens-slider {
+    writing-mode:vertical-lr; direction:rtl;
+    width:120px; pointer-events:all; cursor:pointer;
+    accent-color:#00ff80;
+  }
+
+  /* ── SCROLL INDICATOR ── */
+  #scroll-indicator {
+    position:fixed; right:44px; top:50%; transform:translateY(-50%);
+    font-size:11px; color:#1a4a2a; pointer-events:none;
+    opacity:0; transition:opacity 0.3s;
+  }
+  #scroll-indicator.visible { opacity:1; }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <button class="mod-btn" id="btn-cam">CAM</button>
+  <button class="mod-btn" id="btn-yolo">YOLO</button>
+  <button class="mod-btn" id="btn-zout">Z−</button>
+  <button class="mod-btn" id="btn-zin">Z+</button>
+  <button class="mod-btn" id="btn-z1">1×</button>
+  <button class="mod-btn" id="btn-ocr" title="přečíst text z obrazu a říct nahlas">OCR</button>
+  <span id="mod-label">— OVERLAY —</span>
+  <span id="imu-status">NO IMU</span>
+  <button class="mod-btn" id="btn-head" title="kurzor ovládaný pohybem hlavy (IMU brýlí)">HEAD</button>
+  <button class="mod-btn" id="btn-favs" title="oblíbené věty">★</button>
+  <button class="mod-btn" id="btn-fs" title="celá obrazovka (schová lištu prohlížeče)">⛶</button>
+  <button class="mod-btn" id="btn-set" title="nastavení">⚙</button>
+</div>
+
+<!-- TOUCHPAD -->
+<div id="touchpad">
+  <img id="cam" alt="">
+  <div id="touchpad-hint">
+    1 prst = pohyb myši<br>
+    ťuk = klik &nbsp;|&nbsp; 2× ťuk = dvojklik<br>
+    ťuk + ťuk a táhni = přetažení (držené tlačítko)<br>
+    podržet nebo ťuk 2 prsty = pravý klik<br>
+    tah 2 prsty = scroll (i do stran)
+  </div>
+  <div id="tp-cross"></div>
+</div>
+
+<!-- SENS SLIDER -->
+<div id="sens-row">
+  <input type="range" id="sens-slider" min="0.5" max="5" step="0.1" value="2.0"
+         title="Citlivost">
+</div>
+<div id="scroll-indicator" id="scroll-ind">↕ SCROLL</div>
+
+<!-- KEYBOARD OVERLAY -->
+<div id="kbd-overlay">
+  <div id="kbd-head">
+    <button class="kh full-only" id="kbd-lmb" title="levé tlačítko myši">LMB</button>
+    <button class="kh full-only" id="kbd-rmb" title="pravé tlačítko myši">RMB</button>
+    <button class="kh full-only" id="kbd-drag" title="držet levé tlačítko (tažení hlavou / touchpadem)">DRŽET</button>
+    <button class="kh" id="kbd-head-btn" title="kurzor hlavou zap/vyp">HEAD</button>
+    <div id="kbd-preview"><span></span></div>
+    <button class="kh" id="kbd-favs" title="oblíbené věty – jedním ťuknutím vložit">★</button>
+    <button class="kh" id="kbd-textbtn" title="textové pole – diktování hlasem, dlouhé vkládání">TEXT</button>
+    <button class="kh" id="kbd-full" title="klávesnice přes celou obrazovku / s touchpadem">⛶</button>
+    <button class="kh" id="kbd-set" title="nastavení">⚙</button>
+    <button class="kh" id="kbd-close">✕</button>
+  </div>
+  <div id="kbd-text">
+    <input id="kbd-input" type="text" placeholder="Napiš / nadiktuj text → Enter odešle…" autocomplete="off"
+           autocorrect="off" spellcheck="false">
+    <button id="kbd-send">ODESLAT ↵</button>
+  </div>
+  <div id="fill">
+    <div id="fill-prev"></div>
+    <div class="fill-row">
+      <span id="fill-label"></span>
+      <div id="fill-val"><span></span></div>
+      <button class="fb" id="fill-back" title="předchozí pole">◀</button>
+      <button class="fb" id="fill-next">DALŠÍ ▶</button>
+      <button class="fb" id="fill-cancel" title="zrušit (Esc)">✕</button>
+    </div>
+    <div id="fill-opts"></div>
+  </div>
+  <div id="sugg">
+    <button class="sgb" id="sg-prev" title="předchozí návrh">◀</button>
+    <div id="sg-list"></div>
+    <button class="sgb" id="sg-next" title="další návrh">▶</button>
+    <button class="sgb" id="sg-ok" title="vložit vybraný návrh">✓</button>
+  </div>
+  <div id="kbd-keys"></div>
+</div>
+
+<!-- AR KALIBRACE -->
+<div id="calibp">
+  <div class="mk"><img id="cal-img" alt="značka"></div>
+  <div class="bar">
+    <div id="calib-st">kalibrace…</div>
+    <div class="row">
+      <button id="cal-back">◀ ZPĚT</button>
+      <button id="cal-ok">✓ ZAMÍŘENO</button>
+      <button id="cal-skip">PŘESKOČIT</button>
+      <button id="cal-end">✕ KONEC</button>
+    </div>
+  </div>
+</div>
+
+<!-- OBLIBENE -->
+<div id="favs">
+  <div id="favs-head">
+    <span class="t">★ OBLÍBENÉ</span>
+    <button class="sbtn" id="favs-f-all">VŠE</button>
+    <button class="sbtn" id="favs-f-sent">VĚTY</button>
+    <button class="sbtn" id="favs-f-phr">FRÁZE</button>
+    <button class="sbtn" id="favs-edit">📝</button>
+    <button class="sbtn" id="favs-close">✕</button>
+  </div>
+  <div id="favs-grid"></div>
+</div>
+
+<!-- NASTAVENI -->
+<div id="settings"><div class="panel">
+  <h2>⚙ NASTAVENÍ <button class="sbtn" id="set-close">✕ ZAVŘÍT</button></h2>
+
+  <h3>AR OVERLAY V BRÝLÍCH (localhost:8080/ar.html)</h3>
+  <div class="srow"><label id="ar-cal-st">kalibrace: –</label><button class="sbtn" id="ar-cal">▶ KALIBROVAT</button></div>
+  <div class="srow"><label>Kontrola kalibrace (kroužek na značce)</label><button class="tog" id="ar-val">VYP</button></div>
+  <div class="srow"><label>Automatické potvrzení (podržet hlavu v klidu)</label><button class="tog" id="ar-dwell">ANO</button></div>
+  <div class="srow"><label>Oko (jen v 3D režimu brýlí 3840×1080)</label><button class="tog" id="ar-eye">OBĚ</button></div>
+  <div class="srow"><label>Rámečky</label><button class="tog" id="ar-boxes">ANO</button></div>
+  <div class="srow"><label>Popisky</label><button class="tog" id="ar-labels">ANO</button></div>
+  <div class="srow"><label>Model: segmentace (tvary předmětů)</label><button class="tog" id="ar-seg">NE</button></div>
+  <div class="srow"><label>Výplň masek</label><button class="tog" id="ar-fill">ANO</button></div>
+  <div class="srow"><label>Síla výplně</label><input type="range" id="ar-falpha" min="0.05" max="0.9" step="0.05"><span class="val" id="ar-falpha-v"></span></div>
+  <div class="srow"><label>Obrysy masek</label><button class="tog" id="ar-outline">ANO</button></div>
+  <div class="srow"><label>Text z OCR</label><button class="tog" id="ar-ocr">ANO</button></div>
+  <div class="srow"><label>Min. jistota detekce</label><input type="range" id="ar-conf" min="0.1" max="0.9" step="0.05"><span class="val" id="ar-conf-v"></span></div>
+  <div class="srow"><label>Vyhlazení pohybu</label><input type="range" id="ar-smooth" min="0" max="0.9" step="0.05"><span class="val" id="ar-smooth-v"></span></div>
+  <div class="srow"><label>Velikost písma</label><input type="range" id="ar-font" min="0.6" max="2" step="0.1"><span class="val" id="ar-font-v"></span></div>
+  <div class="srow"><label>Kompenzace pohybu hlavy (IMU)</label><button class="tog" id="ar-head">NE</button></div>
+  <div class="srow"><label>Kompenzace: px na stupeň</label><input type="range" id="ar-pxdeg" min="10" max="80" step="1"><span class="val" id="ar-pxdeg-v"></span></div>
+  <div class="srow"><label>Kompenzace: obrátit vodorovně / svisle</label><button class="tog" id="ar-invx">NE</button><button class="tog" id="ar-invy">NE</button></div>
+  <div class="shint">Kalibrace: na tabletu se objeví značka. Dívej se přes brýle, srovnej střed značky se zaměřovačem
+    (pohni tabletem nebo hlavou) a ťukni ZAMÍŘENO. 9 bodů. Tablet drž na vzdálenost, na kterou budeš nejčastěji koukat.
+    Displej brýlí musí být v režimu <b>bez ukotvení</b> (obraz se hýbe s hlavou). Kompenzace hlavy posouvá rámečky podle
+    pohybu hlavy během zpoždění kamery – když rámečky „ujíždějí“ opačně, obrať směr.</div>
+
+  <h3>DATASET – SNÍMKY PRO TRÉNINK (full HD)</h3>
+  <div class="srow"><label id="ds-st">snímků: –</label><button class="sbtn" id="ds-shoot">📸 VYFOTIT</button></div>
+  <div class="srow"><label id="ds-kid">Tlačítko na brýlích: –</label><button class="sbtn" id="ds-learn">NAUČIT TLAČÍTKO</button></div>
+  <div class="srow"><label>Fotit tlačítkem brýlí</label><button class="tog" id="ds-on">ANO</button></div>
+  <div class="srow"><label>Série při podržení (2× za s)</label><button class="tog" id="ds-burst">ANO</button></div>
+  <div class="srow"><label>Pípnutí po uložení</label><button class="tog" id="ds-sound">ANO</button></div>
+  <div class="shint" id="ds-dir">Ukládá originální 1920×1080 JPEG z kamery, název = datum a čas, k tomu index.csv.
+    Z 5 snímků po stisku se uloží ten nejostřejší. NAUČIT TLAČÍTKO: ťukni a pak zmáčkni tlačítko na brýlích.</div>
+
+  <h3>KURZOR HLAVOU (IMU brýlí)</h3>
+  <div class="srow"><label>Head tracking</label><button class="tog" id="h-on">VYP</button></div>
+  <div class="srow"><label>Citlivost</label><input type="range" id="h-gain" min="4" max="80" step="1"><span class="val" id="h-gain-v"></span></div>
+  <div class="srow"><label>Mrtvá zóna (klid hlavy)</label><input type="range" id="h-dead" min="0" max="8" step="0.25"><span class="val" id="h-dead-v"></span></div>
+  <div class="srow"><label>Obrátit vodorovně</label><button class="tog" id="h-invx">NE</button></div>
+  <div class="srow"><label>Obrátit svisle</label><button class="tog" id="h-invy">NE</button></div>
+  <div class="srow"><label>Prohodit osy</label><button class="tog" id="h-swap">NE</button></div>
+  <div class="shint">Kurzor sleduje pohyb hlavy. Pomalý pohyb = přesné míření, rychlý = přes celou obrazovku.
+    Když kurzor sám ujíždí, zvyš mrtvou zónu. Jede-li opačně, zapni obrácení.</div>
+
+  <h3>KLÁVESNICE</h3>
+  <div class="srow"><label>Otevírat přes celou obrazovku</label><button class="tog" id="k-full">NE</button></div>
+  <div class="srow"><label>Velikost písma kláves</label><input type="range" id="k-scale" min="0.7" max="1.5" step="0.05"><span class="val" id="k-scale-v"></span></div>
+  <div class="srow"><label>Výchozí rozložení</label><button class="tog" id="k-lay">CZ</button></div>
+  <div class="srow"><label>Vibrace při stisku</label><button class="tog" id="k-vib">ANO</button></div>
+
+  <h3>NÁVRHY NAD KLÁVESNICÍ</h3>
+  <div class="srow"><label>Zobrazovat návrhy</label><button class="tog" id="s-on">ANO</button></div>
+  <div class="srow"><label>Učit se slova, která píšu</label><button class="tog" id="s-learn">ANO</button></div>
+  <div class="srow"><label>Oblíbené věty, když nic nepíšu</label><button class="tog" id="s-pinned">ANO</button></div>
+  <div class="srow"><label>Počet návrhů</label><input type="range" id="s-max" min="3" max="15" step="1"><span class="val" id="s-max-v"></span></div>
+  <div class="srow"><label>Nový řádek ve větách</label><button class="tog" id="s-nl">SHIFT+ENTER</button></div>
+  <div class="srow"><label>Slovníky, části vět, celé věty</label><button class="sbtn" id="s-edit">📝 UPRAVIT</button></div>
+  <div class="shint">Návrhy hledají i bez diakritiky (prilis → příliš). ◀ ▶ = posun výběru, ✓ = vložit, ťuk na návrh = vložit hned.
+    Esc návrhy schová až do další klávesy. Zkratka u položky (např. „shr“) ji nabídne jako první.
+    {} ve větě = sem se postaví kurzor.</div>
+
+  <h3>TOUCHPAD</h3>
+  <div class="srow"><label>Citlivost myši</label><input type="range" id="t-sens" min="0.5" max="5" step="0.1"><span class="val" id="t-sens-v"></span></div>
+  <div class="srow"><label>Rychlost scrollu (2 prsty)</label><input type="range" id="t-scroll" min="0.3" max="3" step="0.1"><span class="val" id="t-scroll-v"></span></div>
+  <div class="srow"><label>Celá obrazovka (bez lišty prohlížeče)</label><button class="sbtn" id="s-fs">⛶ CELÁ OBRAZOVKA</button></div>
+
+  <h3>HUD OVERLAY</h3>
+  <div class="srow"><label>Přepnout overlay modul</label>
+    <button class="sbtn" id="ov-prev">◀ PŘEDCHOZÍ</button><button class="sbtn" id="ov-next">DALŠÍ ▶</button></div>
+</div></div>
+
+<!-- BOTTOM BAR -->
+<div id="bottombar">
+  <button class="btn" id="btn-lmb">
+    <span class="btn-icon">🖱</span><span class="btn-label">LMB</span>
+  </button>
+  <button class="btn danger" id="btn-rmb">
+    <span class="btn-icon">🖱</span><span class="btn-label">RMB</span>
+  </button>
+  <button class="btn" id="btn-scroll-up">
+    <span class="btn-icon">▲</span><span class="btn-label">SCROLL</span>
+  </button>
+  <button class="btn" id="btn-scroll-dn">
+    <span class="btn-icon">▼</span><span class="btn-label">SCROLL</span>
+  </button>
+  <button class="btn" id="btn-drag" title="držet levé tlačítko (tažení) – další ťuk pustí">
+    <span class="btn-icon">✊</span><span class="btn-label">DRŽET</span>
+  </button>
+  <button class="btn" id="btn-kbd">
+    <span class="btn-icon">⌨</span><span class="btn-label">KBD</span>
+  </button>
+  <button class="btn" id="btn-esc">
+    <span class="btn-icon">⎋</span><span class="btn-label">ESC</span>
+  </button>
+</div>
+
+<script>
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+// Primarne WebSocket (port 8765). Kdyz neprojde (firewall), jde vse pres HTTP na
+// stejnem portu jako stranka: POST /cmd (prikazy) a GET /state (stav bryli).
+let ws = null;
+let wsReady = false;
+
+let headCfg = {}, imuOk = false;
+function showState(d, via) {
+  const el = document.getElementById('imu-status');
+  el.textContent = (d.connected ? `${Number(d.hz).toFixed(0)} Hz` : 'NO IMU') + ' · ' + via;
+  el.className = d.connected ? 'ok' : 'err';
+  imuOk = !!d.connected;
+  if (d.head) { headCfg = d.head; if (typeof headUi === 'function') headUi(); }
+  if (d.ar) arCfg = d.ar;
+  if (d.dataset) { const was = dsCfg.t; dsCfg = d.dataset; if (was && d.dataset.t !== was) buzz(); }
+  if (d.yolo) yoloTask = d.yolo.task;
+  if (d.calib && typeof calibUi === 'function') calibUi(d.calib, d.calib_msg);
+}
+let arCfg = {}, calibSt = {}, yoloTask = null, dsCfg = {};
+
+function connect() {
+  try {
+    ws = new WebSocket('ws://' + location.hostname + ':8765');
+  } catch (e) { setTimeout(connect, 3000); return; }
+  ws.onopen  = () => { wsReady = true; };
+  ws.onclose = () => { wsReady = false; setTimeout(connect, 3000); };
+  ws.onerror = () => { try { ws.close(); } catch (e) {} };
+  ws.onmessage = e => { try { showState(JSON.parse(e.data), 'WS'); } catch (err) {} };
+}
+connect();
+
+let pendDx = 0, pendDy = 0, pendCmds = [], flushTimer = null;
+function flushHttp() {
+  flushTimer = null;
+  const batch = pendCmds;
+  pendCmds = [];
+  if (pendDx || pendDy) { batch.unshift({ t: 'mouse_move', dx: pendDx, dy: pendDy }); pendDx = pendDy = 0; }
+  if (!batch.length) return;
+  fetch('/cmd', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(batch) }).catch(() => {});
+}
+
+function send(obj) {
+  if (wsReady && ws && ws.readyState === 1) { ws.send(JSON.stringify(obj)); return; }
+  if (obj.t === 'mouse_move') { pendDx += obj.dx; pendDy += obj.dy; }
+  else pendCmds.push(obj);
+  if (!flushTimer) flushTimer = setTimeout(flushHttp, 30);
+}
+
+setInterval(() => {
+  if (wsReady) return;
+  fetch('/state').then(r => r.json()).then(d => showState(d, 'HTTP'))
+    .catch(() => {
+      const el = document.getElementById('imu-status');
+      el.textContent = 'server ✗'; el.className = 'err';
+    });
+}, 1000);
+
+// ── CITLIVOST ─────────────────────────────────────────────────────────────────
+const sensSlider = document.getElementById('sens-slider');
+let SENS = 2.0;
+let SCROLL_SENS = 1.0;
+try { SCROLL_SENS = parseFloat(localStorage.getItem('scrollSens')) || 1.0; } catch (e) {}
+try { SENS = parseFloat(localStorage.getItem('tpSens')) || 2.0; } catch (e) {}
+sensSlider.value = SENS;
+function setSens(v) {
+  SENS = v; sensSlider.value = v;
+  try { localStorage.setItem('tpSens', v); } catch (e) {}
+  const t = document.getElementById('t-sens'); if (t) { t.value = v; document.getElementById('t-sens-v').textContent = v.toFixed(1); }
+}
+sensSlider.addEventListener('input', () => setSens(parseFloat(sensSlider.value)));
+
+// ── TOUCHPAD ──────────────────────────────────────────────────────────────────
+// Pocet prstu se bere vzdy z e.touches (skutecnost), ne z vlastniho seznamu - ztracene
+// "touchend" uz nemuze zpusobit, ze se jeden prst pocita jako dva.
+const tp = document.getElementById('touchpad');
+const tpCross = document.getElementById('tp-cross');
+const hint = document.getElementById('touchpad-hint');
+const TAP_SLOP = 14;      // px: posun prstu, ktery se jeste pocita jako tuk
+const TAP_MS = 500;       // tuk = kratsi nez tohle
+const HOLD_MS = 650;      // podrzeni = pravy klik
+const SCROLL_PX = 28;     // px tahu dvema prsty = 1 zarazka kolecka
+let g = null;             // aktualni gesto
+let lastTap = null;       // {t, x, y} posledni tuk -> "tuk + tuk a tahni" = click & drag
+let dragLock = false;     // tlacitko DRZET
+function dragUi() {
+  for (const id of ['btn-drag', 'kbd-drag']) { const b = document.getElementById(id); if (b) b.classList.toggle('drag-on', dragLock); }
+  const kb = document.getElementById('kbd-drag'); if (kb) kb.textContent = dragLock ? 'DRŽÍM ✊' : 'DRŽET';
+}
+function setDragLock(on) {
+  if (on === dragLock) return;
+  dragLock = on; send({ t: on ? 'mouse_down' : 'mouse_up', btn: 'left' }); flushNow(); buzzTp(on ? 40 : 15); dragUi();
+}
+let holdTimer = null;
+function buzzTp(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} }
+function flushNow() {      // klik poslat hned (pres HTTP by jinak cekal na davku)
+  if (!(wsReady && ws && ws.readyState === 1) && flushTimer) { clearTimeout(flushTimer); flushTimer = null; flushHttp(); }
+}
+function ripple(x, y) {
+  const r = document.createElement('div');
+  r.className = 'ripple';
+  r.style.left = x + 'px';
+  r.style.top  = y + 'px';
+  tp.appendChild(r);
+  setTimeout(() => r.remove(), 400);
+}
+function avg(list) {
+  let x = 0, y = 0;
+  for (const t of list) { x += t.clientX; y += t.clientY; }
+  return { x: x / list.length, y: y / list.length };
+}
+function cross(x, y) { tpCross.style.display = 'block'; tpCross.style.left = x + 'px'; tpCross.style.top = (y - 52) + 'px'; }
+
+tp.addEventListener('touchstart', e => {
+  e.preventDefault();
+  hint.style.display = 'none';
+  const n = e.touches.length;
+  clearTimeout(holdTimer);
+  if (n === 1) {                                   // novy dotyk jednim prstem
+    const t = e.touches[0];
+    const arm = !dragLock && lastTap && Date.now() - lastTap.t < 330 && Math.hypot(t.clientX - lastTap.x, t.clientY - lastTap.y) < 50;
+    g = { mode: 'one', id: t.identifier, x0: t.clientX, y0: t.clientY, lx: t.clientX, ly: t.clientY,
+          t0: Date.now(), moved: false, held: false, maxN: 1, dragArm: arm, dragging: false };
+    cross(t.clientX, t.clientY);
+    if (!arm && !dragLock) holdTimer = setTimeout(() => {
+      if (g && g.mode === 'one' && !g.moved) {
+        g.held = true; send({ t: 'mouse_click', btn: 'right' }); flushNow(); ripple(g.x0, g.y0 - 52); buzzTp(30);
+      }
+    }, HOLD_MS);
+  } else if (n >= 2) {                             // druhy prst = scroll (nebo tuk dvema prsty)
+    const c = avg([e.touches[0], e.touches[1]]);
+    g = { mode: 'two', lx: c.x, ly: c.y, x0: c.x, y0: c.y, t0: g ? g.t0 : Date.now(), moved: false,
+          ax: 0, ay: 0, maxN: n };
+    document.getElementById('scroll-indicator').classList.add('visible');
+  }
+}, { passive: false });
+
+tp.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (!g) return;
+  if (g.mode === 'one' && e.touches.length === 1) {
+    const t = e.touches[0];
+    if (!g.moved && Math.hypot(t.clientX - g.x0, t.clientY - g.y0) > TAP_SLOP) {
+      g.moved = true; clearTimeout(holdTimer);
+      if (g.dragArm) {                              // druhy dotyk po tuku se hnul = tazeni
+        g.dragging = true; send({ t: 'mouse_down', btn: 'left' }); flushNow(); buzzTp(25);
+        tpCross.classList.add('drag');
+      }
+    }
+    const dx = (t.clientX - g.lx) * SENS, dy = (t.clientY - g.ly) * SENS;
+    if (Math.abs(dx) > 0.3 || Math.abs(dy) > 0.3) send({ t: 'mouse_move', dx, dy });
+    g.lx = t.clientX; g.ly = t.clientY;
+    cross(t.clientX, t.clientY);
+  } else if (g.mode === 'two' && e.touches.length >= 2) {
+    const c = avg([e.touches[0], e.touches[1]]);
+    if (!g.moved && Math.hypot(c.x - g.x0, c.y - g.y0) > TAP_SLOP) g.moved = true;
+    // prirozeny smer jako na telefonu: prsty dolu = obsah jede dolu (= kolecko nahoru)
+    g.ay += (c.y - g.ly) / SCROLL_PX * SCROLL_SENS;
+    g.ax += (c.x - g.lx) / SCROLL_PX * SCROLL_SENS;
+    g.lx = c.x; g.ly = c.y;
+    if (Math.abs(g.ay) >= 0.1) { send({ t: 'mouse_scroll', delta: g.ay }); g.ay = 0; }
+    if (Math.abs(g.ax) >= 0.15) { send({ t: 'mouse_scroll', hdelta: -g.ax }); g.ax = 0; }
+  }
+}, { passive: false });
+
+function endGesture(e, cancelled) {
+  if (!g) return;
+  const n = e.touches.length;
+  if (g.mode === 'one' && n === 0) {
+    clearTimeout(holdTimer);
+    if (g.dragging) {                               // konec tazeni = pustit tlacitko
+      send({ t: 'mouse_up', btn: 'left' }); flushNow(); buzzTp(15);
+      tpCross.classList.remove('drag'); lastTap = null;
+    } else if (!cancelled && !g.moved && !g.held && Date.now() - g.t0 < TAP_MS) {
+      ripple(g.lx, g.ly - 52);
+      if (dragLock) { setDragLock(false); lastTap = null; }        // pri DRZET tuk tlacitko pusti
+      else {
+        // tuk = levy klik; dva tuky rychle za sebou = dvojklik (Windows ho pozna sam)
+        send({ t: 'mouse_click', btn: 'left' }); flushNow(); buzzTp(8);
+        lastTap = g.dragArm ? null : { t: Date.now(), x: g.lx, y: g.ly };
+      }
+    } else lastTap = null;
+    g = null;
+  } else if (g.mode === 'two' && n < 2) {
+    if (!cancelled && !g.moved && !g.done && Date.now() - g.t0 < TAP_MS) {   // tuk dvema prsty = pravy klik
+      send({ t: 'mouse_click', btn: 'right' }); flushNow(); ripple(g.x0, g.y0 - 52); buzzTp(30);
+    }
+    g.done = true;                                  // dalsi zvednuty prst uz nic nedela
+    if (n === 0) g = null;
+  }
+  if (n === 0 || cancelled) {
+    g = null;
+    tpCross.style.display = 'none';
+    document.getElementById('scroll-indicator').classList.remove('visible');
+  }
+}
+tp.addEventListener('touchend', e => { e.preventDefault(); endGesture(e, false); }, { passive: false });
+tp.addEventListener('touchcancel', e => {
+  clearTimeout(holdTimer);
+  if (g && g.dragging) { send({ t: 'mouse_up', btn: 'left' }); flushNow(); tpCross.classList.remove('drag'); }
+  endGesture(e, true);
+}, { passive: false });
+document.getElementById('btn-drag').addEventListener('click', () => setDragLock(!dragLock));
+
+// ── TLAČÍTKA ──────────────────────────────────────────────────────────────────
+document.getElementById('btn-lmb').addEventListener('click', () =>
+  send({ t: 'mouse_click', btn: 'left' }));
+document.getElementById('btn-rmb').addEventListener('click', () =>
+  send({ t: 'mouse_click', btn: 'right' }));
+document.getElementById('btn-scroll-up').addEventListener('click', () =>
+  send({ t: 'mouse_scroll', delta: 3 }));
+document.getElementById('btn-scroll-dn').addEventListener('click', () =>
+  send({ t: 'mouse_scroll', delta: -3 }));
+document.getElementById('btn-esc').addEventListener('click', () =>
+  send({ t: 'key', vk: 0x1B }));  // VK_ESCAPE
+
+// ── OVERLAY PŘEPÍNÁNÍ ─────────────────────────────────────────────────────────
+// zoom kamery Eye (plati pro CAM, YOLO i HUD v brylich)
+document.getElementById('btn-zin').addEventListener('click', () => send({ t: 'zoom', dz: 1.5 }));
+document.getElementById('btn-zout').addEventListener('click', () => send({ t: 'zoom', dz: 1 / 1.5 }));
+document.getElementById('btn-z1').addEventListener('click', () => send({ t: 'zoom', reset: 1 }));
+// OCR: precist text z toho, co je videt, a rict ho nahlas (text je i v HUD v okne OCR)
+document.getElementById('btn-ocr').addEventListener('click', () => {
+  send({ t: 'ocr', read: 1, speak: 1 });
+  modLabel.textContent = 'OCR: čtu…'; labelHold = Date.now() + 2500;
+  setTimeout(() => fetch('/ocr.json').then(r => r.json()).then(o => {
+    const r = o.result;
+    modLabel.textContent = o.error ? 'OCR: ' + o.error
+      : (r && r.text ? 'OCR: ' + r.text.replace(/\n/g, ' · ').slice(0, 90) : 'OCR: žádný text');
+    labelHold = Date.now() + 8000;
+  }).catch(() => {}), 1500);
+});
+document.getElementById('ov-prev').addEventListener('click', () =>
+  send({ t: 'overlay', cmd: 'prev' }));
+document.getElementById('ov-next').addEventListener('click', () =>
+  send({ t: 'overlay', cmd: 'next' }));
+
+// ── KAMERA XREAL EYE ──────────────────────────────────────────────────────────
+const camImg   = document.getElementById('cam');
+const camBtn   = document.getElementById('btn-cam');
+const modLabel = document.getElementById('mod-label');
+const BLANK    = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+let camOn = false, camRetry = null;
+
+let yoloOn = false;
+const yoloBtn = document.getElementById('btn-yolo');
+
+function camStart() {
+  clearTimeout(camRetry);
+  modLabel.textContent = yoloOn ? 'YOLO: načítám model…' : 'CAM: připojuji…';
+  camImg.style.display = 'block';
+  hint.style.display = 'none';
+  camImg.src = (yoloOn ? '/eye_yolo.mjpg' : '/eye.mjpg') + '?w=960&t=' + Date.now();   // tablet: zmensene (WiFi)
+}
+yoloBtn.addEventListener('click', () => {
+  yoloOn = !yoloOn;
+  yoloBtn.classList.toggle('on', yoloOn);
+  if (yoloOn && !camOn) { camOn = true; camBtn.classList.add('on'); }
+  if (camOn) camStart();
+});
+function camStop() {
+  clearTimeout(camRetry);
+  camImg.src = BLANK;               // zavře spojení se streamem
+  camImg.style.display = 'none';
+  modLabel.textContent = '— OVERLAY —';
+}
+camBtn.addEventListener('click', () => {
+  camOn = !camOn;
+  camBtn.classList.toggle('on', camOn);
+  camOn ? camStart() : camStop();
+});
+camImg.addEventListener('load', () => {
+  if (camOn && camImg.src !== BLANK) modLabel.textContent = 'CAM: živě';
+});
+camImg.addEventListener('error', () => {
+  if (!camOn) return;
+  if (yoloOn) {
+    // YOLO neni k dispozici -> ukaz duvod a vrat se k cistemu obrazu
+    fetch('/yolo.json').then(r => r.json()).then(y => {
+      yoloOn = false; yoloBtn.classList.remove('on');
+      camStart();
+      labelHold = Date.now() + 8000;
+      setTimeout(() => { modLabel.textContent = 'YOLO: ' + y.status; }, 100);
+    }).catch(() => { camRetry = setTimeout(camStart, 3000); });
+    return;
+  }
+  modLabel.textContent = 'CAM: chyba, zkouším znovu…';
+  fetch('/eye/status').then(r => r.json())
+    .then(s => { modLabel.textContent = 'CAM: ' + s.status; }).catch(() => {});
+  camRetry = setTimeout(camStart, 3000);
+});
+document.addEventListener('visibilitychange', () => {
+  if (!camOn) return;
+  document.hidden ? camStop() : camStart();
+});
+// u MJPEG streamu prohlizec 'load' casto nevyvola -> stav bereme ze serveru
+let labelHold = 0;
+let camMark = { n: -1, t: Date.now() };
+function camFresh(n) {               // n = pocitadlo snimku ze serveru
+  if (n !== camMark.n) { camMark = { n, t: Date.now() }; return; }
+  if (Date.now() - camMark.t > 6000) { camMark.t = Date.now(); camStart(); }
+}
+setInterval(() => {
+  if (!camOn || Date.now() < labelHold) return;
+  if (yoloOn) {
+    fetch('/yolo.json').then(r => r.json()).then(y => {
+      if (!y.running) { modLabel.textContent = 'YOLO: ' + y.status; return; }
+      const cnt = {};
+      y.dets.forEach(d => { cnt[d.name] = (cnt[d.name] || 0) + 1; });
+      const list = Object.entries(cnt).map(([n, c]) => c > 1 ? `${n}×${c}` : n).join(', ');
+      modLabel.textContent = `YOLO ${y.ms} ms · ${list || 'nic'}`;
+      camFresh(y.seq);
+    }).catch(() => {});
+    return;
+  }
+  fetch('/eye/status').then(r => r.json()).then(s => {
+    modLabel.textContent = s.running ? `CAM: živě · ${s.width}px · ${s.fps} fps` : 'CAM: ' + s.status;
+    camFresh(s.frames);
+  }).catch(() => {});
+}, 2000);
+
+// ── KLÁVESNICE ────────────────────────────────────────────────────────────────
+const kbdOverlay = document.getElementById('kbd-overlay');
+const kbdInput   = document.getElementById('kbd-input');
+const kbdBtn     = document.getElementById('btn-kbd');
+
+const kbdKeys    = document.getElementById('kbd-keys');
+const kbdText    = document.getElementById('kbd-text');
+const kbdPrev    = document.querySelector('#kbd-preview span');
+
+const PREF = {
+  get(k, d) { try { const v = localStorage.getItem('pref_' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('pref_' + k, JSON.stringify(v)); } catch (e) {} },
+};
+let kFull = PREF.get('kbdFull', false);
+function kbdShow(on) {
+  kbdOverlay.classList.toggle('visible', on);
+  document.body.classList.toggle('kbd', on);
+  document.body.classList.toggle('kbdfull', on && kFull);
+  setTimeout(fitKeys, 0);
+  kbdBtn.classList.toggle('active', on);
+  if (!on) { kbdText.classList.remove('visible'); releaseMods(); kbdInput.blur(); }
+}
+kbdBtn.addEventListener('click', () => kbdShow(!kbdOverlay.classList.contains('visible')));
+document.getElementById('kbd-close').addEventListener('click', () => kbdShow(false));
+document.getElementById('kbd-textbtn').addEventListener('click', () => {
+  const on = kbdText.classList.toggle('visible');
+  document.getElementById('kbd-textbtn').classList.toggle('on', on);
+  if (on) { kbdInput.value = ''; kbdInput.focus(); } else kbdInput.blur();
+});
+document.getElementById('kbd-send').addEventListener('click', sendText);
+kbdInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); sendText(); }
+});
+function sendText() {
+  const text = kbdInput.value;
+  if (!text) return;
+  send({ t: 'type_text', text });
+  kbdInput.value = '';
+  kbdInput.focus();
+}
+
+// ── plna klavesnice: znaky jdou jako Unicode (nezavisle na rozlozeni Windows),
+//    zkratky (Ctrl/Alt/Win + klavesa) a specialni klavesy jako Virtual Key kody
+const VK = { BKSP: 8, TAB: 9, ENTER: 13, ESC: 27, SPACE: 32, PGUP: 33, PGDN: 34, END: 35, HOME: 36,
+  LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, INS: 45, DEL: 46, MENU: 93, PRTSC: 44 };
+const MODVK = { ctrl: 0x11, shift: 0x10, alt: 0x12, win: 0x5B };
+const DEAD = { '´': '́', 'ˇ': '̌', '¨': '̈' };
+const sp = (label, vk, w = 1, extra = {}) => ({ sp: true, label, vk, w, ...extra });
+const letters = s => [...s].map(c => ({ n: c, s: c.toUpperCase(), vk: c.toUpperCase().charCodeAt(0), letter: true }));
+const ch = (n, s, vk) => ({ n, s, vk });
+const sym = s => [...s].map(c => ({ n: c, s: c, vk: 0 }));
+const Fk = n => sp('F' + n, 0x6F + n);
+const BOTTOM = [sp('Esc', VK.ESC, 1.1), sp('Ctrl', 0, 1.2, { mod: 'ctrl' }), sp('Win', 0, 1, { mod: 'win' }),
+  sp('Alt', 0, 1, { mod: 'alt' }), sp('Fn', 0, 1, { act: 'fn' }), sp('CZ', 0, 1, { act: 'layout' }),
+  sp('#+=', 0, 1.1, { act: 'sym' }), sp('', VK.SPACE, 4, { space: true }),
+  sp('◀', VK.LEFT), sp('▲', VK.UP), sp('▼', VK.DOWN), sp('▶', VK.RIGHT)];
+const FNROWS = [
+  [Fk(1), Fk(2), Fk(3), Fk(4), Fk(5), Fk(6), sp('⌫', VK.BKSP, 1.4)],
+  [sp('Tab', VK.TAB, 1.2), Fk(7), Fk(8), Fk(9), Fk(10), Fk(11), Fk(12)],
+  [sp('Ins', VK.INS), sp('Home', VK.HOME), sp('PgUp', VK.PGUP), sp('PrtSc', VK.PRTSC), sp('Menu', VK.MENU), sp('Enter ⏎', VK.ENTER, 1.6)],
+  [sp('Shift', 0, 1.4, { mod: 'shift' }), sp('Del', VK.DEL), sp('End', VK.END), sp('PgDn', VK.PGDN), sp('Shift', 0, 1.4, { mod: 'shift' })],
+];
+const LAYOUTS = {
+  cz: [
+    [ch(';', '°', 0xC0), ch('+', '1', 0x31), ch('ě', '2', 0x32), ch('š', '3', 0x33), ch('č', '4', 0x34),
+     ch('ř', '5', 0x35), ch('ž', '6', 0x36), ch('ý', '7', 0x37), ch('á', '8', 0x38), ch('í', '9', 0x39),
+     ch('é', '0', 0x30), ch('=', '%', 0xBD), ch('´', 'ˇ', 0xBB), sp('⌫', VK.BKSP, 1.6)],
+    [sp('Tab', VK.TAB, 1.4), ...letters('qwertzuiop'), ch('ú', '/', 0xDB), ch(')', '(', 0xDD), ch('¨', "'", 0xDC)],
+    [sp('Caps', 0, 1.6, { act: 'caps' }), ...letters('asdfghjkl'), ch('ů', '"', 0xBA), ch('§', '!', 0xDE), sp('Enter ⏎', VK.ENTER, 1.9)],
+    [sp('Shift', 0, 2, { mod: 'shift' }), ...letters('yxcvbnm'), ch(',', '?', 0xBC), ch('.', ':', 0xBE), ch('-', '_', 0xBF),
+     sp('Shift', 0, 2, { mod: 'shift' })],
+  ],
+  en: [
+    [ch('`', '~', 0xC0), ch('1', '!', 0x31), ch('2', '@', 0x32), ch('3', '#', 0x33), ch('4', '$', 0x34), ch('5', '%', 0x35),
+     ch('6', '^', 0x36), ch('7', '&', 0x37), ch('8', '*', 0x38), ch('9', '(', 0x39), ch('0', ')', 0x30), ch('-', '_', 0xBD),
+     ch('=', '+', 0xBB), sp('⌫', VK.BKSP, 1.6)],
+    [sp('Tab', VK.TAB, 1.4), ...letters('qwertyuiop'), ch('[', '{', 0xDB), ch(']', '}', 0xDD), ch('\\', '|', 0xDC)],
+    [sp('Caps', 0, 1.6, { act: 'caps' }), ...letters('asdfghjkl'), ch(';', ':', 0xBA), ch("'", '"', 0xDE), sp('Enter ⏎', VK.ENTER, 1.9)],
+    [sp('Shift', 0, 2, { mod: 'shift' }), ...letters('zxcvbnm'), ch(',', '<', 0xBC), ch('.', '>', 0xBE), ch('/', '?', 0xBF),
+     sp('Shift', 0, 2, { mod: 'shift' })],
+  ],
+  sym: [
+    [...sym('1234567890'), ...sym('€°'), sp('⌫', VK.BKSP, 1.6)],
+    [sp('Tab', VK.TAB, 1.4), ...sym('@#$&*()[]{}<>')],
+    [...sym('~^`|\\/"\'%=+'), sp('Enter ⏎', VK.ENTER, 1.9)],
+    [...sym('_-!?:;,.§×÷±…'), sp('⌫', VK.BKSP, 1.2)],
+  ],
+};
+let kLayout = 'cz', kSym = false, kCaps = false, kDead = null, kFn = false;
+try { kLayout = localStorage.getItem('kbdLayout') || 'cz'; } catch (e) {}
+const kMods = { ctrl: 0, shift: 0, alt: 0, win: 0 };        // 0 vyp, 1 jednou, 2 zamceno
+const kHeld = new Set();                                     // prave drzene prstem (Shift + klavesa)
+let kBuf = '';
+
+function preview(s) {
+  for (const c of s) kBuf = c === '\b' ? kBuf.slice(0, -1) : kBuf + c;
+  kBuf = kBuf.slice(-120);
+  kbdPrev.textContent = kBuf;
+}
+function modOn(m) { return kMods[m] > 0 || kHeld.has(m); }
+function activeMods(withShift) {
+  return ['ctrl', 'alt', 'win', ...(withShift ? ['shift'] : [])].filter(modOn);
+}
+function setMod(m, v) {
+  const was = kMods[m];
+  kMods[m] = v;
+  if (m !== 'shift' && (was === 2) !== (v === 2)) send({ t: 'key_hold', vk: MODVK[m], down: v === 2 });
+}
+function clearOneShot() {
+  let ch = false;
+  for (const m in kMods) if (kMods[m] === 1) { kMods[m] = 0; ch = true; }
+  if (ch) renderKeys();
+}
+function releaseMods() {
+  for (const m in kMods) kMods[m] = 0;
+  kHeld.clear();
+  send({ t: 'release_all' });
+  dragLock = false; dragUi();
+  renderKeys();
+}
+function buzz() { if (!PREF.get('vib', true)) return; try { navigator.vibrate && navigator.vibrate(8); } catch (e) {} }
+
+function outChar(c) {
+  if (kDead) {                                // mrtva klavesa: ´ + a = á, ˇ + c = č
+    const mark = DEAD[kDead]; kDead = null;
+    const comp = c === ' ' ? null : (c + mark).normalize('NFC');
+    c = comp && comp.length === 1 ? comp : (c === ' ' ? Object.keys(DEAD).find(k => DEAD[k] === mark) : c);
+    renderKeys();
+  }
+  if (fill) { fillType(c); return; }           // vyplnovani sablony: pise se do formulare
+  send({ t: 'char', text: c });
+  preview(c);
+  ctxType(c);
+}
+
+function pressKey(k) {
+  buzz();
+  if (k.mod) {
+    setMod(k.mod, (kMods[k.mod] + 1) % 3);
+    renderKeys(); return;
+  }
+  if (k.act === 'caps') { kCaps = !kCaps; renderKeys(); return; }
+  if (k.act === 'layout') {
+    kLayout = kLayout === 'cz' ? 'en' : 'cz'; kSym = false;
+    try { localStorage.setItem('kbdLayout', kLayout); } catch (e) {}
+    setTimeout(buildKeys, 0); return;
+  }
+  if (k.act === 'sym') { kSym = !kSym; kFn = false; setTimeout(buildKeys, 0); return; }
+  if (k.act === 'fn') { kFn = !kFn; kSym = false; setTimeout(buildKeys, 0); return; }
+  const shift = modOn('shift');
+  const combo = activeMods(false);
+  if (fill && (k.sp || combo.length)) {        // formular sablony: Enter/Tab = dal, Esc = zrusit, ⌫ = smazat
+    if (k.space) outChar(' ');
+    else if (k.vk === VK.BKSP) fillBack1();
+    else if (k.vk === VK.ENTER || k.vk === VK.TAB) fillNext(shift ? -1 : 1);
+    else if (k.vk === VK.ESC) fillCancel();
+    else if (k.vk === VK.LEFT || k.vk === VK.UP) fillOpt(-1);
+    else if (k.vk === VK.RIGHT || k.vk === VK.DOWN) fillOpt(1);
+    clearOneShot(); return;
+  }
+  if (k.sp) {                                  // specialni klavesa (+ vsechny modifikatory)
+    if (k.space && !combo.length) { outChar(' '); clearOneShot(); return; }
+    if (k.vk === VK.ESC && !combo.length && !shift && suggVisible()) {   // Esc nejdriv schova navrhy
+      sgHidden = true; renderSugg(); clearOneShot(); return;
+    }
+    send({ t: 'key_combo', vk: k.vk, mods: activeMods(true) });
+    if (k.vk === VK.BKSP && !combo.length) { preview('\b'); ctxBack(); }
+    else { if (k.vk === VK.ENTER) preview('⏎'); ctxReset(); }      // sipky, Enter, Tab… = jinde v textu
+    clearOneShot(); return;
+  }
+  if (combo.length && k.vk) {                  // Ctrl+C, Alt+F4 …
+    send({ t: 'key_combo', vk: k.vk, mods: activeMods(true) });
+    ctxReset();
+    clearOneShot(); return;
+  }
+  const up = k.letter ? (shift !== kCaps) : shift;
+  const c = up ? k.s : k.n;
+  if (DEAD[c] && !kDead) { kDead = c; renderKeys(); clearOneShot(); return; }
+  outChar(c);
+  clearOneShot();
+}
+
+let kEls = [];                                     // [{el, k}] aktualni klavesy
+function buildKeys() {                            // jen pri zmene rozlozeni (CZ / EN / symboly)
+  const rows = [...(kFn ? FNROWS : kSym ? LAYOUTS.sym : LAYOUTS[kLayout]), BOTTOM];
+  kbdKeys.innerHTML = ''; kEls = []; kHeld.clear();
+  rows.forEach((row, ri) => {
+    const r = document.createElement('div');
+    r.className = 'krow';
+    for (const k of row) {
+      const el = document.createElement('div');
+      el.className = 'key' + (k.sp ? ' sp' : '');
+      el.style.flexGrow = k.w || 1;
+      bindKey(el, k);
+      kEls.push({ el, k });
+      r.appendChild(el);
+    }
+    kbdKeys.appendChild(r);
+  });
+  renderKeys();
+}
+function renderKeys() {                           // popisky a stavy bez prestavby (bezici opakovani zustane)
+  const shift = modOn('shift');
+  for (const { el, k } of kEls) {
+    el.classList.remove('on', 'lock', 'dead');
+    if (k.sp) {
+      el.textContent = k.act === 'layout' ? (kLayout === 'cz' ? 'CZ' : 'EN')
+        : k.act === 'sym' ? (kSym ? 'ABC' : '#+=') : (k.space ? (kLayout === 'cz' ? 'mezerník' : 'space') : k.label);
+      if (k.mod) { if (kMods[k.mod] === 2) el.classList.add('lock'); else if (modOn(k.mod)) el.classList.add('on'); }
+      if (k.act === 'caps' && kCaps) el.classList.add('lock');
+      if (k.act === 'sym' && kSym) el.classList.add('on');
+      if (k.act === 'fn' && kFn) el.classList.add('fn-on');
+    } else {
+      const up = k.letter ? (shift !== kCaps) : shift;
+      el.textContent = up ? k.s : k.n;
+      if (!k.letter && k.s !== k.n) {
+        const a = document.createElement('span'); a.className = 'alt'; a.textContent = up ? k.n : k.s; el.appendChild(a);
+      }
+      if (kDead && (k.n === kDead || k.s === kDead)) el.classList.add('dead');
+    }
+  }
+}
+
+function bindKey(el, k) {
+  let rep = null, delay = null, used = false;
+  const stop = () => {
+    clearTimeout(delay); clearInterval(rep); delay = rep = null;
+    el.classList.remove('down');
+    if (k.mod && kHeld.has(k.mod)) {              // modifikator drzeny prstem
+      kHeld.delete(k.mod);
+      if (used) setMod(k.mod, 0);                 // drzel se behem jine klavesy -> pustit uplne
+      renderKeys();
+    }
+  };
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    try { el.setPointerCapture(e.pointerId); } catch (err) {}
+    el.classList.add('down');
+    if (k.mod) {                                  // tap = jednou -> zamknout -> vypnout; drzeni = drzet
+      used = false; kHeld.add(k.mod); el._hold = () => { used = true; };
+      pressKey(k); return;
+    }
+    for (const x of kEls) if (x.k.mod && kHeld.has(x.k.mod) && x.el._hold) x.el._hold();
+    pressKey(k);
+    if (k.act || k.vk === VK.ENTER || k.vk === VK.ESC || (k.vk >= 0x70 && k.vk <= 0x7B)) return;  // bez opakovani
+    delay = setTimeout(() => { rep = setInterval(() => { if (!el.isConnected) stop(); else pressKey(k); }, 55); }, 450);
+  });
+  el.addEventListener('pointerup', stop);
+  el.addEventListener('pointercancel', stop);
+  el.addEventListener('lostpointercapture', stop);
+}
+buildKeys();
+
+// ── NAVRHY: vlastni slovniky (slova, casti vet, cele vety) + naucena slova ──────
+let PHR = { words: [], phrases: [], sentences: [], learned: {} };
+let kCtx = '';                 // text napsany od posledniho "skoku" (klik, sipka, Enter)
+let sgItems = [], sgHi = 0, sgHidden = false, learnQ = [];
+const sgList = document.getElementById('sg-list'), suggEl = document.getElementById('sugg');
+const nrm = x => x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const SG_TYPE = { words: 'slovo', phrases: 'fráze', sentences: 'věta', learned: 'naučené' };
+function loadPhrases() {
+  fetch('/phrases.json').then(r => r.json()).then(d => { PHR = d; renderSugg(); if (favsEl && favsEl.classList.contains('visible')) favsRender(); }).catch(() => {});
+}
+loadPhrases();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) loadPhrases(); });
+function ctxType(c) {
+  if (/[\s.,!?;:()]/.test(c)) {                         // konec slova -> naucit
+    const w = (kCtx.match(/[\p{L}][\p{L}\p{N}'-]{2,}$/u) || [])[0];
+    if (w && PREF.get('sgLearn', true)) { learnQ.push(w); PHR.learned[w] = (PHR.learned[w] || 0) + 1; }
+  }
+  kCtx = (kCtx + c).slice(-400); sgHidden = false; sgHi = 0; renderSugg();
+}
+function ctxBack() { kCtx = kCtx.slice(0, -1); sgHidden = false; sgHi = 0; renderSugg(); }
+function ctxReset() { kCtx = ''; sgHi = 0; previewClear(); renderSugg(); }
+function previewClear() { kBuf = ''; kbdPrev.textContent = ''; }
+document.getElementById('kbd-preview').addEventListener('click', () => { buzz(); previewClear(); kCtx = ''; renderSugg(); });
+setInterval(() => {                                       // naucena slova na server (davkove)
+  if (!learnQ.length) return;
+  const words = learnQ.splice(0, 200);
+  fetch('/phrases/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ learn: words }) }).catch(() => {});
+}, 10000);
+function tailsOf(ctx) {                                   // konce textu: rozepsane slovo, + 1..3 slova pred nim
+  const out = [], cur = (ctx.match(/[\p{L}\p{N}_'-]*$/u) || [''])[0];
+  if (cur) out.push(cur);
+  const re = /\S+\s*$/u; let rest = ctx.slice(0, ctx.length - cur.length), tail = cur;
+  for (let k = 0; k < 3; k++) {
+    const m = rest.match(re); if (!m) break;
+    tail = m[0] + tail; rest = rest.slice(0, rest.length - m[0].length);
+    if (/[.!?\n]/.test(m[0])) break;
+    out.push(tail);
+  }
+  return { cur, tails: out };
+}
+function computeSugg() {
+  const ctx = kCtx, { cur, tails } = tailsOf(ctx), res = new Map();
+  const add = (list, it, text, back, score) => {
+    const key = text.toLowerCase();
+    const prev = res.get(key);
+    if (!prev || prev.score < score) res.set(key, { list, id: it && it.id, text, back, score });
+  };
+  const all = ['words', 'phrases', 'sentences'];
+  const ncur = nrm(cur);
+  // zkratky (key) maji prednost
+  if (cur) for (const l of all) for (const it of PHR[l] || [])
+    if (it.key && nrm(it.key) === ncur) add(l, it, it.text, cur.length, 10000 + it.uses);
+  if (cur) {
+    for (const it of PHR.words || []) {
+      const n = nrm(it.text);
+      if (n.startsWith(ncur) && it.text.length > cur.length) add('words', it, it.text, cur.length, 300 + it.uses * 3 + (it.pin ? 500 : 0) + (n === ncur ? -100 : 0));
+    }
+    if (PREF.get('sgLearn', true)) for (const [w, c] of Object.entries(PHR.learned || {})) {
+      if (w.length > cur.length && nrm(w).startsWith(ncur)) add('learned', null, w, cur.length, 100 + c * 3);
+    }
+  }
+  for (const [ti, tail] of tails.entries()) {
+    const nt = nrm(tail).replace(/\s+/g, ' ');
+    if (nt.trim().length < 2) continue;
+    for (const l of ['phrases', 'sentences']) for (const it of PHR[l] || []) {
+      const n = nrm(it.text).replace(/\s+/g, ' ');
+      if (n.startsWith(nt) && it.text.length > tail.length)
+        add(l, it, it.text, tail.length, 250 + ti * 120 + it.uses * 3 + (it.pin ? 400 : 0) + (l === 'sentences' ? 40 : 0));
+    }
+  }
+  if (!cur && (!ctx.trim() || /[.!?\n]\s*$/.test(ctx)) && PREF.get('sgPinned', true)) {
+    // nic rozepsaneho -> oblibene a nejpouzivanejsi vety / fraze
+    for (const l of ['sentences', 'phrases']) for (const it of PHR[l] || [])
+      if (it.pin || it.uses > 0) add(l, it, it.text, 0, (it.pin ? 1000 : 0) + it.uses * 3 + (l === 'sentences' ? 20 : 0));
+  }
+  return [...res.values()].sort((a, b) => b.score - a.score).slice(0, PREF.get('sgMax', 8));
+}
+function suggVisible() { return PREF.get('sgOn', true) && !sgHidden && sgItems.length > 0 && kbdOverlay.classList.contains('visible'); }
+function renderSugg() {
+  sgItems = PREF.get('sgOn', true) && !sgHidden ? computeSugg() : [];
+  if (sgHi >= sgItems.length) sgHi = 0;
+  const vis = PREF.get('sgOn', true) && !sgHidden && sgItems.length > 0;
+  if (vis !== suggEl.classList.contains('visible')) { suggEl.classList.toggle('visible', vis); setTimeout(fitKeys, 0); }
+  sgList.innerHTML = '';
+  sgItems.forEach((it, i) => {
+    const b = document.createElement('div');
+    b.className = 'sg' + (i === sgHi ? ' hi' : '');
+    const one = it.text.replace(/\n/g, ' ⏎ ').replace('{}', '▮');
+    b.innerHTML = `<span class="ty">${SG_TYPE[it.list]}</span><span class="tx"></span>`;
+    b.querySelector('.tx').textContent = one;
+    b.addEventListener('pointerdown', e => { e.preventDefault(); b.classList.add('down'); });
+    b.addEventListener('pointerup', e => { e.preventDefault(); b.classList.remove('down'); acceptSugg(i); });
+    b.addEventListener('pointercancel', () => b.classList.remove('down'));
+    sgList.appendChild(b);
+  });
+  const hiEl = sgList.children[sgHi];
+  if (hiEl) {                                          // vybrany navrh vzdy videt
+    const L = hiEl.offsetLeft, R = L + hiEl.offsetWidth;
+    if (R > sgList.scrollLeft + sgList.clientWidth) sgList.scrollLeft = R - sgList.clientWidth;
+    if (L < sgList.scrollLeft) sgList.scrollLeft = L;
+  }
+}
+function rotateSugg(d) { if (!sgItems.length) return; buzz(); sgHi = (sgHi + d + sgItems.length) % sgItems.length; renderSugg(); }
+function acceptSugg(i) {
+  const it = sgItems[i]; if (!it) return;
+  buzz();
+  insertItem(it);
+}
+function insertItem(it) {                       // it = {list, id, text, back}
+  if (tplVars(it.text).some(v => v.type !== 'auto')) { fillStart(it); return; }
+  doInsert({ ...it, text: tplApply(it.text, {}) });
+}
+function doInsert(it) {
+  let text = it.text;
+  const typed = kCtx.slice(kCtx.length - it.back);
+  if (it.list !== 'sentences' && typed && /^\p{Lu}/u.test(typed) && /^\p{Ll}/u.test(text))
+    text = text[0].toUpperCase() + text.slice(1);         // Velke pismeno zachovat
+  const hasCursor = text.includes('{}');
+  if (!hasCursor && !/\n$/.test(text)) text += ' ';
+  send({ t: 'insert', text, back: it.back, nl: PREF.get('sgNl', 'shift') });
+  preview('\b'.repeat(it.back) + text.replace('{}', ''));
+  if (it.id) fetch('/phrases/update', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ use: { list: it.list, id: it.id } }) }).catch(() => {});
+  const lst = PHR[it.list]; if (it.id && lst) { const x = lst.find(x => x.id === it.id); if (x) x.uses++; }
+  if (hasCursor) { kCtx = ''; previewClear(); } else kCtx = (kCtx.slice(0, kCtx.length - it.back) + text).slice(-400);
+  sgHi = 0; renderSugg();
+}
+// ── SABLONY: {jméno} = napsat, {volba: a|b|c} = vybrat, {datum} {čas} {den} = samo,
+//    {schránka} = obsah schranky PC (doplni server), {} = kurzor, {{ }} = obycejne zavorky
+const AUTO = {
+  'datum': () => { const d = new Date(); return `${d.getDate()}. ${d.getMonth() + 1}. ${d.getFullYear()}`; },
+  'čas': () => new Date().toTimeString().slice(0, 5),
+  'den': () => ['neděle', 'pondělí', 'úterý', 'středa', 'čtvrtek', 'pátek', 'sobota'][new Date().getDay()],
+};
+AUTO.cas = AUTO['čas'];
+function tplVars(text) {
+  const out = [], seen = new Set();
+  const t = text.replace(/\{\{|\}\}/g, '');
+  for (const m of t.matchAll(/\{([^{}]*)\}/g)) {
+    const raw = m[1].trim();
+    if (!raw) continue;                                       // {} = kurzor
+    const low = raw.toLowerCase();
+    if (low === 'schránka' || low === 'schranka') continue;   // doplni server
+    let v;
+    if (AUTO[low]) v = { key: raw, name: raw, type: 'auto' };
+    else if (raw.includes('|')) {
+      const ci = raw.indexOf(':');
+      const name = ci >= 0 ? raw.slice(0, ci).trim() : 'volba';
+      const opts = (ci >= 0 ? raw.slice(ci + 1) : raw).split('|').map(x => x.trim()).filter(Boolean);
+      v = { key: raw, name: name || 'volba', type: 'choice', opts };
+    } else v = { key: raw, name: raw, type: 'text' };
+    if (!seen.has(v.key)) { seen.add(v.key); out.push(v); }
+  }
+  return out;
+}
+function tplApply(text, vals) {
+  return text.replace(/\{\{/g, '\u0001').replace(/\}\}/g, '\u0002')
+    .replace(/\{([^{}]*)\}/g, (m, raw) => {
+      const k = raw.trim(), low = k.toLowerCase();
+      if (!k || low === 'schránka' || low === 'schranka') return m;
+      if (AUTO[low]) return AUTO[low]();
+      return vals[k] != null ? vals[k] : '';
+    }).replace(/\u0001/g, '{').replace(/\u0002/g, '}');
+}
+let fill = null;
+const fillEl = document.getElementById('fill');
+function varHist() { try { return JSON.parse(localStorage.getItem('varHist') || '{}'); } catch (e) { return {}; } }
+function fillStart(it) {
+  const vars = tplVars(it.text).filter(v => v.type !== 'auto');
+  const h = varHist(), vals = {};
+  for (const v of vars) vals[v.key] = v.type === 'choice' ? (h[v.key] && v.opts.includes(h[v.key][0]) ? h[v.key][0] : v.opts[0]) : '';
+  fill = { it, vars, vals, idx: 0 };
+  if (!kbdOverlay.classList.contains('visible')) kbdShow(true);
+  fillRender();
+}
+function fillRender() {
+  fillEl.classList.toggle('visible', !!fill);
+  suggEl.style.display = fill ? 'none' : '';
+  setTimeout(fitKeys, 0);
+  if (!fill) return;
+  const v = fill.vars[fill.idx], last = fill.idx === fill.vars.length - 1;
+  document.getElementById('fill-label').textContent = `${v.name} (${fill.idx + 1}/${fill.vars.length})`;
+  document.querySelector('#fill-val span').textContent = fill.vals[v.key] || '';
+  document.getElementById('fill-val').style.display = v.type === 'choice' ? 'none' : '';
+  document.getElementById('fill-next').textContent = last ? '✓ VLOŽIT' : 'DALŠÍ ▶';
+  // nahled: aktualni promenna zvyraznena
+  const esc = x => x.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const prev = fill.it.text.replace(/\{([^{}]*)\}/g, (m, raw) => {
+    const k = raw.trim(); const vv = fill.vars.find(x => x.key === k);
+    if (!vv) return AUTO[k.toLowerCase()] ? AUTO[k.toLowerCase()]() : m;
+    const txt = fill.vals[k] || vv.name;
+    return `\u0003${vv === v ? 'v' : 'vd'}\u0004${txt}\u0005`;
+  });
+  document.getElementById('fill-prev').innerHTML = esc(prev.replace(/\n/g, ' ⏎ '))
+    .replace(/\u0003(v|vd)\u0004([^\u0005]*)\u0005/g, '<span class="$1">$2</span>');
+  const opts = document.getElementById('fill-opts'); opts.innerHTML = '';
+  const list = v.type === 'choice' ? v.opts.map(o => ({ o, cls: 'fo' + (o === fill.vals[v.key] ? ' sel' : '') }))
+    : (varHist()[v.key] || []).map(o => ({ o, cls: 'fo hist' }));
+  for (const { o, cls } of list) {
+    const b = document.createElement('button'); b.className = cls; b.textContent = o;
+    b.onclick = () => { buzz(); fill.vals[v.key] = o; if (v.type === 'choice') fillNext(1); else fillRender(); };
+    opts.appendChild(b);
+  }
+}
+function fillType(c) { const v = fill.vars[fill.idx]; if (v.type === 'choice') return; fill.vals[v.key] = (fill.vals[v.key] || '') + c; fillRender(); }
+function fillBack1() { const v = fill.vars[fill.idx]; if (v.type === 'choice') return; fill.vals[v.key] = (fill.vals[v.key] || '').slice(0, -1); fillRender(); }
+function fillOpt(d) {
+  const v = fill.vars[fill.idx]; if (v.type !== 'choice') return;
+  const i = v.opts.indexOf(fill.vals[v.key]); fill.vals[v.key] = v.opts[(i + d + v.opts.length) % v.opts.length]; fillRender();
+}
+function fillNext(d) {
+  if (!fill) return;
+  const n = fill.idx + d;
+  if (n < 0) return;
+  if (n < fill.vars.length) { fill.idx = n; fillRender(); return; }
+  // hotovo: zapamatovat hodnoty a vlozit
+  const h = varHist();
+  for (const v of fill.vars) {
+    const val = fill.vals[v.key]; if (!val) continue;
+    h[v.key] = [val, ...(h[v.key] || []).filter(x => x !== val)].slice(0, 8);
+  }
+  try { localStorage.setItem('varHist', JSON.stringify(h)); } catch (e) {}
+  const it = fill.it, text = tplApply(it.text, fill.vals);
+  fill = null; fillRender();
+  doInsert({ ...it, text });
+}
+function fillCancel() { fill = null; fillRender(); renderSugg(); }
+document.getElementById('fill-next').addEventListener('click', () => { buzz(); fillNext(1); });
+document.getElementById('fill-back').addEventListener('click', () => { buzz(); fillNext(-1); });
+document.getElementById('fill-cancel').addEventListener('click', () => { buzz(); fillCancel(); });
+
+// ── PANEL OBLIBENYCH: mrizka velkych tlacitek, ťuk = vlozit ──────────────────
+const favsEl = document.getElementById('favs');
+let favFilter = PREF.get('favFilter', 'all');
+function favsRender() {
+  const g = document.getElementById('favs-grid'); g.innerHTML = '';
+  for (const [id, f] of [['favs-f-all', 'all'], ['favs-f-sent', 'sentences'], ['favs-f-phr', 'phrases']])
+    document.getElementById(id).classList.toggle('on', favFilter === f);
+  const lists = favFilter === 'all' ? ['sentences', 'phrases'] : [favFilter];
+  let items = [];
+  for (const l of lists) for (const it of PHR[l] || []) items.push({ l, it });
+  items.sort((a, b) => (b.it.pin - a.it.pin) || (b.it.uses - a.it.uses) || (a.l === 'sentences' ? -1 : 1));
+  items = items.slice(0, 80);
+  if (!items.length) { g.innerHTML = '<div id="favs-empty">Zatím nic – přidej věty v editoru (📝).</div>'; return; }
+  for (const { l, it } of items) {
+    const b = document.createElement('button');
+    b.className = 'fav' + (it.pin ? ' pin' : '');
+    const vars = tplVars(it.text).filter(v => v.type !== 'auto').map(v => v.name);
+    b.innerHTML = '<span class="tx"></span><span class="mt"></span>';
+    b.querySelector('.tx').textContent = it.text.replace(/\n/g, ' ⏎ ').replace('{}', '▮');
+    b.querySelector('.mt').innerHTML = (it.pin ? '<b>★</b> ' : '') + (l === 'sentences' ? 'věta' : 'fráze')
+      + (it.key ? ` · <b>${it.key.replace(/[<>&]/g, '')}</b>` : '') + (vars.length ? ' · doplníš: ' + vars.join(', ').replace(/[<>&]/g, '') : '')
+      + (it.uses ? ` · ${it.uses}×` : '');
+    b.onclick = () => { buzz(); favsShow(false); insertItem({ list: l, id: it.id, text: it.text, back: 0 }); };
+    g.appendChild(b);
+  }
+}
+function favsShow(on) { favsEl.classList.toggle('visible', on); if (on) { loadPhrases(); favsRender(); } }
+for (const [id, f] of [['favs-f-all', 'all'], ['favs-f-sent', 'sentences'], ['favs-f-phr', 'phrases']])
+  document.getElementById(id).addEventListener('click', () => { favFilter = f; PREF.set('favFilter', f); favsRender(); });
+document.getElementById('favs-close').addEventListener('click', () => favsShow(false));
+document.getElementById('favs-edit').addEventListener('click', () => { favsShow(false); document.getElementById('s-edit').click(); });
+document.getElementById('btn-favs').addEventListener('click', () => favsShow(true));
+document.getElementById('kbd-favs').addEventListener('click', () => favsShow(true));
+
+document.getElementById('sg-prev').addEventListener('click', () => rotateSugg(-1));
+document.getElementById('sg-next').addEventListener('click', () => rotateSugg(1));
+document.getElementById('sg-ok').addEventListener('click', () => acceptSugg(sgHi));
+// klik mysi = kurzor jinde v textu -> kontext od zacatku
+const _send0 = send;
+send = function (obj) { if (obj && (obj.t === 'mouse_click' || obj.t === 'type_text')) { kCtx = ''; sgHi = 0; previewClear(); setTimeout(renderSugg, 0); } _send0(obj); };
+
+// velikost pisma podle skutecne velikosti klaves (citelne i pres ztmavena skla)
+function fitKeys() {
+  const k = kbdKeys.querySelector('.key:not(.sp)') || kbdKeys.querySelector('.key');
+  if (!k || !kbdOverlay.classList.contains('visible')) return;
+  const sc = PREF.get('kScale', 1);
+  const fs = Math.max(14, Math.min(k.clientHeight * 0.5, k.clientWidth * 0.62, 64)) * sc;
+  document.documentElement.style.setProperty('--kfs', fs.toFixed(0) + 'px');
+}
+addEventListener('resize', () => setTimeout(fitKeys, 50));
+addEventListener('orientationchange', () => setTimeout(fitKeys, 300));
+const _build0 = buildKeys;
+buildKeys = function () { _build0(); setTimeout(fitKeys, 0); };
+
+// celoobrazovkova klavesnice (bez touchpadu) <-> klavesnice s touchpadem
+function setFull(on) {
+  kFull = on; PREF.set('kbdFull', on);
+  document.body.classList.toggle('kbdfull', on && kbdOverlay.classList.contains('visible'));
+  document.getElementById('kbd-full').textContent = on ? '◱' : '⛶';
+  document.getElementById('kbd-full').title = on ? 'zmenšit – zobrazit touchpad' : 'klávesnice přes celou obrazovku';
+  setTimeout(fitKeys, 0);
+  syncSettings();
+}
+document.getElementById('kbd-full').addEventListener('click', () => setFull(!kFull));
+document.getElementById('kbd-lmb').addEventListener('click', () => { buzz(); send({ t: 'mouse_click', btn: 'left' }); });
+document.getElementById('kbd-rmb').addEventListener('click', () => { buzz(); send({ t: 'mouse_click', btn: 'right' }); });
+document.getElementById('kbd-drag').addEventListener('click', () => { buzz(); setDragLock(!dragLock); });
+
+// kurzor hlavou
+function headToggle() {
+  if (!headCfg.on && !imuOk) { modLabel.textContent = 'HEAD: brýle neposílají IMU (NO IMU)'; labelHold = Date.now() + 5000; }
+  send({ t: 'head', toggle: 1 });
+  headCfg.on = !headCfg.on; headUi();             // hned ukazat, server potvrdi stavem
+}
+function headUi() {
+  const on = !!headCfg.on;
+  document.getElementById('btn-head').classList.toggle('head-on', on);
+  document.getElementById('kbd-head-btn').classList.toggle('head-on', on);
+  document.getElementById('btn-head').textContent = on ? 'HEAD ●' : 'HEAD';
+  document.getElementById('kbd-head-btn').textContent = on ? 'HEAD ●' : 'HEAD';
+  syncSettings();
+}
+document.getElementById('btn-head').addEventListener('click', headToggle);
+document.getElementById('kbd-head-btn').addEventListener('click', headToggle);
+
+// nastaveni
+const settingsEl = document.getElementById('settings');
+const $s = id => document.getElementById(id);
+function tog(id, on, yes = 'ANO', no = 'NE') { const b = $s(id); b.classList.toggle('on', !!on); b.textContent = on ? yes : no; }
+function syncSettings() {
+  if (!settingsEl.classList.contains('visible')) return;
+  tog('h-on', headCfg.on, 'ZAP ●', 'VYP');
+  if (document.activeElement !== $s('h-gain') && headCfg.gain != null) $s('h-gain').value = headCfg.gain;
+  if (document.activeElement !== $s('h-dead') && headCfg.dead != null) $s('h-dead').value = headCfg.dead;
+  $s('h-gain-v').textContent = Number($s('h-gain').value).toFixed(0);
+  $s('h-dead-v').textContent = Number($s('h-dead').value).toFixed(2);
+  tog('h-invx', headCfg.inv_x); tog('h-invy', headCfg.inv_y); tog('h-swap', headCfg.swap);
+  tog('k-full', kFull);
+  $s('k-scale').value = PREF.get('kScale', 1); $s('k-scale-v').textContent = Math.round(PREF.get('kScale', 1) * 100) + '%';
+  $s('k-lay').textContent = kLayout === 'cz' ? 'CZ' : 'EN';
+  tog('k-vib', PREF.get('vib', true));
+  $s('t-sens').value = SENS; $s('t-sens-v').textContent = SENS.toFixed(1);
+  $s('t-scroll').value = SCROLL_SENS; $s('t-scroll-v').textContent = SCROLL_SENS.toFixed(1);
+  tog('s-on', PREF.get('sgOn', true)); tog('s-learn', PREF.get('sgLearn', true)); tog('s-pinned', PREF.get('sgPinned', true));
+  $s('s-max').value = PREF.get('sgMax', 8); $s('s-max-v').textContent = PREF.get('sgMax', 8);
+  $s('s-nl').textContent = PREF.get('sgNl', 'shift') === 'shift' ? 'SHIFT+ENTER' : 'ENTER';
+  const DS = dsCfg || {};
+  $s('ds-st').textContent = `snímků: ${DS.count ?? '–'}` + (DS.last ? ` · poslední ${DS.last}` : '');
+  $s('ds-kid').textContent = DS.learn ? 'ZMÁČKNI TLAČÍTKO NA BRÝLÍCH…' : `Tlačítko na brýlích: id ${DS.kid ?? '–'}`;
+  $s('ds-learn').classList.toggle('on', !!DS.learn);
+  tog('ds-on', DS.on !== false); tog('ds-burst', (DS.burst_s ?? 0.5) > 0); tog('ds-sound', DS.sound !== false);
+  if (DS.dir) $s('ds-dir').firstChild.textContent = `Složka: ${DS.dir}. Ukládá originální 1920×1080 JPEG z kamery, název = datum a čas, k tomu index.csv. `;
+  const A = arCfg || {};
+  $s('ar-cal-st').textContent = calibSt.H ? `kalibrace: ±${calibSt.err} px (${calibSt.n_used} bodů)` : 'kalibrace: zatím není';
+  tog('ar-val', A.validate, 'ZAP ●', 'VYP'); tog('ar-dwell', A.dwell !== false);
+  $s('ar-eye').textContent = { both: 'OBĚ', left: 'LEVÉ', right: 'PRAVÉ' }[A.eye || 'both']; tog('ar-boxes', A.boxes !== false); tog('ar-labels', A.labels);
+  tog('ar-outline', A.outline); tog('ar-fill', A.fill); tog('ar-seg', yoloTask === 'seg'); tog('ar-ocr', A.ocr); tog('ar-head', A.head_comp); tog('ar-invx', A.inv_x); tog('ar-invy', A.inv_y);
+  for (const [id, k, f] of [['ar-conf', 'min_conf', v => Math.round(v * 100) + '%'], ['ar-smooth', 'smooth', v => Math.round(v * 100) + '%'],
+    ['ar-font', 'font', v => Math.round(v * 100) + '%'], ['ar-pxdeg', 'px_deg', v => v.toFixed(0)],
+    ['ar-falpha', 'fill_alpha', v => Math.round(v * 100) + '%']]) {
+    if (A[k] == null) continue;
+    if (document.activeElement !== $s(id)) $s(id).value = A[k];
+    $s(id + '-v').textContent = f(Number($s(id).value));
+  }
+}
+function openSettings(on) { settingsEl.classList.toggle('visible', on); if (on) { syncSettings(); fetch('/state').then(r => r.json()).then(d => showState(d, wsReady ? 'WS' : 'HTTP')).catch(() => {}); } }
+$s('btn-set').addEventListener('click', () => openSettings(true));
+$s('kbd-set').addEventListener('click', () => openSettings(true));
+$s('set-close').addEventListener('click', () => openSettings(false));
+$s('h-on').addEventListener('click', headToggle);
+let hT = null;
+const headSend = body => { Object.assign(headCfg, body); clearTimeout(hT); hT = setTimeout(() => send({ t: 'head', ...body }), 120); syncSettings(); };
+$s('h-gain').addEventListener('input', () => headSend({ gain: parseFloat($s('h-gain').value) }));
+$s('h-dead').addEventListener('input', () => headSend({ dead: parseFloat($s('h-dead').value) }));
+$s('h-invx').addEventListener('click', () => { headCfg.inv_x = !headCfg.inv_x; send({ t: 'head', inv_x: headCfg.inv_x }); syncSettings(); });
+$s('h-invy').addEventListener('click', () => { headCfg.inv_y = !headCfg.inv_y; send({ t: 'head', inv_y: headCfg.inv_y }); syncSettings(); });
+$s('h-swap').addEventListener('click', () => { headCfg.swap = !headCfg.swap; send({ t: 'head', swap: headCfg.swap }); syncSettings(); });
+$s('k-full').addEventListener('click', () => setFull(!kFull));
+$s('k-scale').addEventListener('input', () => { PREF.set('kScale', parseFloat($s('k-scale').value)); fitKeys(); syncSettings(); });
+$s('k-lay').addEventListener('click', () => {
+  kLayout = kLayout === 'cz' ? 'en' : 'cz'; kSym = kFn = false;
+  try { localStorage.setItem('kbdLayout', kLayout); } catch (e) {}
+  buildKeys(); syncSettings();
+});
+$s('k-vib').addEventListener('click', () => { PREF.set('vib', !PREF.get('vib', true)); syncSettings(); });
+$s('t-sens').addEventListener('input', () => { setSens(parseFloat($s('t-sens').value)); });
+$s('t-scroll').addEventListener('input', () => { SCROLL_SENS = parseFloat($s('t-scroll').value); try { localStorage.setItem('scrollSens', SCROLL_SENS); } catch (e) {} syncSettings(); });
+const prefTog = (id, k, d) => $s(id).addEventListener('click', () => { PREF.set(k, !PREF.get(k, d)); sgHidden = false; renderSugg(); syncSettings(); });
+prefTog('s-on', 'sgOn', true); prefTog('s-learn', 'sgLearn', true); prefTog('s-pinned', 'sgPinned', true);
+$s('s-max').addEventListener('input', () => { PREF.set('sgMax', parseInt($s('s-max').value)); renderSugg(); syncSettings(); });
+$s('s-nl').addEventListener('click', () => { PREF.set('sgNl', PREF.get('sgNl', 'shift') === 'shift' ? 'enter' : 'shift'); syncSettings(); });
+$s('s-edit').addEventListener('click', () => {
+  PREF.set('reopenKbd', kbdOverlay.classList.contains('visible'));
+  location.href = '/phrases.html?from=tablet';
+});
+if (PREF.get('reopenKbd', false)) { PREF.set('reopenKbd', false); setTimeout(() => kbdShow(true), 50); }
+// cela obrazovka (Fullscreen API - schova listu prohlizece); musi byt po tuku
+function fsToggle() {
+  const d = document, el = d.documentElement;
+  const on = d.fullscreenElement || d.webkitFullscreenElement;
+  try {
+    if (on) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+    else (el.requestFullscreen || el.webkitRequestFullscreen).call(el, { navigationUI: 'hide' });
+  } catch (e) { modLabel.textContent = 'celá obrazovka: prohlížeč nepovolil'; labelHold = Date.now() + 4000; }
+}
+function fsUi() {
+  const on = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  $s('btn-fs').textContent = on ? '⛶✕' : '⛶';
+  $s('s-fs').textContent = on ? '✕ ZRUŠIT CELOU OBRAZOVKU' : '⛶ CELÁ OBRAZOVKA';
+  setTimeout(fitKeys, 200);
+}
+$s('btn-fs').addEventListener('click', fsToggle);
+$s('s-fs').addEventListener('click', fsToggle);
+document.addEventListener('fullscreenchange', fsUi);
+document.addEventListener('webkitfullscreenchange', fsUi);
+setFull(kFull);
+headUi();
+
+// ── AR: kalibrace a nastaveni overlay ────────────────────────────────────────
+const calibEl = document.getElementById('calibp');
+let calMsgT = 0, calMsg = '', calMsgUntil = 0;
+function calibUi(c, m) {
+  calibSt = c;
+  if (m && m.t !== calMsgT) {
+    calMsgT = m.t; calMsgUntil = Date.now() + 2500;
+    calMsg = m.msg || (m.err_px != null ? `HOTOVO – průměrná chyba ${m.err_px} px (${m.n} bodů)` : '');
+    if (m.ok && !m.msg && m.err_px == null) buzz();
+  }
+  const show = !!c.active;
+  if (show && !calibEl.classList.contains('visible')) document.getElementById('cal-img').src = '/calib/marker.png';
+  calibEl.classList.toggle('visible', show || Date.now() < calMsgUntil && calMsg.startsWith('HOTOVO'));
+  const st = document.getElementById('calib-st');
+  const seen = c.seen ? '<span class="ok">značku vidím ✓</span>' : '<span class="no">kamera značku nevidí</span>';
+  st.innerHTML = (c.active ? `bod ${c.idx + 1} / ${c.n} · ${seen}` : '')
+    + (Date.now() < calMsgUntil && calMsg ? `<br>${calMsg.replace(/[<>&]/g, '')}` : '');
+  syncSettings();
+}
+const calSend = action => { buzzTp(action === 'confirm' ? 25 : 10); send({ t: 'calib', action }); flushNow(); };
+document.getElementById('cal-ok').addEventListener('pointerdown', e => { e.preventDefault(); calSend('confirm'); });  // hned pri dotyku (tablet se nestihne pohnout)
+document.getElementById('cal-back').addEventListener('click', () => calSend('back'));
+document.getElementById('cal-skip').addEventListener('click', () => calSend('skip'));
+document.getElementById('cal-end').addEventListener('click', () => { calSend('cancel'); calibEl.classList.remove('visible'); });
+$s('ar-cal').addEventListener('click', () => { openSettings(false); document.getElementById('cal-img').src = '/calib/marker.png'; calibEl.classList.add('visible'); calSend('start'); });
+const arSet = b => { Object.assign(arCfg, b); send({ t: 'ar', ...b }); syncSettings(); };
+for (const [id, k] of [['ar-val', 'validate'], ['ar-boxes', 'boxes'], ['ar-labels', 'labels'], ['ar-outline', 'outline'],
+  ['ar-ocr', 'ocr'], ['ar-fill', 'fill'], ['ar-head', 'head_comp'], ['ar-invx', 'inv_x'], ['ar-invy', 'inv_y']])
+  $s(id).addEventListener('click', () => arSet({ [k]: !arCfg[k] }));
+$s('ar-dwell').addEventListener('click', () => arSet({ dwell: !(arCfg.dwell !== false) }));
+$s('ar-eye').addEventListener('click', () => arSet({ eye: { both: 'left', left: 'right', right: 'both' }[arCfg.eye || 'both'] }));
+$s('ds-shoot').addEventListener('click', () => send({ t: 'dataset', shoot: 1 }));
+$s('ds-learn').addEventListener('click', () => send({ t: 'dataset', learn: !dsCfg.learn }));
+$s('ds-on').addEventListener('click', () => send({ t: 'dataset', on: !(dsCfg.on !== false) }));
+$s('ds-burst').addEventListener('click', () => send({ t: 'dataset', burst_s: (dsCfg.burst_s ?? 0.5) > 0 ? 0 : 0.5 }));
+$s('ds-sound').addEventListener('click', () => send({ t: 'dataset', sound: !(dsCfg.sound !== false) }));
+let arT = null;
+$s('ar-seg').addEventListener('click', () => { yoloTask = yoloTask === 'seg' ? 'det' : 'seg'; send({ t: 'yolo_cfg', task: yoloTask }); syncSettings(); });
+for (const [id, k] of [['ar-conf', 'min_conf'], ['ar-smooth', 'smooth'], ['ar-font', 'font'], ['ar-pxdeg', 'px_deg'], ['ar-falpha', 'fill_alpha']])
+  $s(id).addEventListener('input', () => { arCfg[k] = parseFloat($s(id).value); syncSettings(); clearTimeout(arT); arT = setTimeout(() => send({ t: 'ar', [k]: arCfg[k] }), 150); });
+
+// ── PREVENT SCROLL / ZOOM ─────────────────────────────────────────────────────
+document.addEventListener('touchmove', e => { if (!e.target.closest('#settings, #favs-grid, #fill-opts')) e.preventDefault(); }, { passive: false });
+</script>
+</body>
+</html>
