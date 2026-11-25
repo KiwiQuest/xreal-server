@@ -25,7 +25,24 @@ nespouštět zároveň s kořenem, dokud nebudou předělané na moduly (viz bod
   a běží to stejně na notebooku s integrovanou grafikou, vývojové desce i pevném PC.
 - Systray, víko, hibernace, USB a fyzický vstup jdou přímo přes Win32 (`koren/win.py`).
 
-## 3. Stavový automat „notebook v tašce“ (`koren/states.py`)
+## 3. Provozní režimy (`koren/profiles.py`)
+
+| | Tray | GUI na druhém monitoru | Vše v brýlích | Zavřené víko |
+|---|---|---|---|---|
+| spojení s IMU a tlačítkem | ne | ano (živý stav) | ano | ano |
+| moduly | ne | ne | ano | ano |
+| overlay a menu v brýlích | ne | ne | ano | ano |
+| okno nastavení | na požádání | trvale na druhém monitoru | na požádání | ne |
+| displej notebooku | beze změny | beze změny | zhasnutý (Win+P), pak vrácen | Windows ho vypne samy |
+| ovládání hlavou | ručně | ručně | ručně | samo zapnuté |
+| tik hlavní smyčky | 250 ms | 100 ms | 30 ms | 30 ms |
+
+Výchozí profil `auto`: brýle připojené = Vše v brýlích, jinak Tray. Start s Windows přes klíč `Run`
+v HKCU (bez admin práv). Do Tray jde vždy: systray, **Ctrl+Alt+T**, položka v menu brýlí, okno nastavení.
+Kontrola USB a víka běží ve všech režimech (je levná), aby zavření víka fungovalo i z Tray.
+Stav Win+P před zhasnutím se ukládá do nastavení, takže se displej vrátí i po pádu aplikace.
+
+## 4. Stavový automat „notebook v tašce“ (`koren/states.py`)
 
 ```
                 víko zavřené + brýle            brýle zmizely (tolerance 20 s)
@@ -45,7 +62,7 @@ nespouštět zároveň s kořenem, dokud nebudou předělané na moduly (viz bod
 - Výpadek kabelu brýlí v tašce: nejdřív tolerance, pak teprve odpočet. Bez odpovědi uživatele
   se nikdy neprovede nic nevratného kromě hibernace po odpočtu (ta je bezpečná, nic se neztratí).
 
-## 4. Ovládání bez rukou a rádce
+## 5. Ovládání bez rukou a rádce
 
 **Vstupy, které fungují vždy, i když modul drží myš:**
 
@@ -73,7 +90,7 @@ nespouštět zároveň s kořenem, dokud nebudou předělané na moduly (viz bod
 do jednoho řádku. Znovu se rozbalí při otázce, varování nebo potížích. U stolu s rukama se neukazuje.
 Otázka bez reakce se jednou zopakuje jednodušeji, pak platí bezpečná volba (NE).
 
-## 5. Moduly (`koren/modules/`)
+## 6. Moduly (`koren/modules/`)
 
 Modul = třída odvozená od `Module` + `MODULE = Třída`. Dostává:
 
@@ -106,7 +123,7 @@ Výjimka v modulu se zaloguje, po 3 chybách se modul vypne a rádce to oznámí
 5. `assistant`: lokální LLM na Jetsonu (hlasové ovládání, popis okolí).
 6. `sensors`: ESP32 hub, druhá IMU, radar.
 
-## 6. Stabilita
+## 7. Stabilita
 
 - **Supervizor** (`koren.py`): aplikace běží jako podproces. Když spadne, nebo přestane psát heartbeat
   (zaseknutá hlavní smyčka), supervizor ji do pár sekund spustí znovu. Při opakovaných pádech zpomalí.
@@ -116,8 +133,7 @@ Výjimka v modulu se zaloguje, po 3 chybách se modul vypne a rádce to oznámí
 - Nastavení se ukládá atomicky (zápis do `.tmp` a přejmenování).
 - `--dry`: nic nehibernuje a nehýbe myší, v systray jsou zkoušky víka a brýlí. Testy: `python -m unittest discover tests`.
 
-## 7. Otevřené otázky na další krok
+## 8. Otevřené otázky na další krok
 
 - Mluvit (modul `voice`) ve výchozím stavu? Teď je vypnutý.
 - Doba čekání na brýle (teď 5 min) a jestli po odpočtu hibernovat, nebo jen uspat.
-- Má se kořen spouštět s Windows automaticky (zástupce v Po spuštění)?

@@ -278,5 +278,36 @@ class ModulesTest(unittest.TestCase):
         self.assertEqual(mm.failed, ["neexistuje_xyz"])
 
 
+from koren import profiles  # noqa: E402
+
+
+class ProfilesTest(unittest.TestCase):
+    def test_auto_follows_glasses(self):
+        self.assertEqual(profiles.effective("auto", True), profiles.GLASSES)
+        self.assertEqual(profiles.effective("auto", False), profiles.TRAY)
+        self.assertEqual(profiles.effective("monitor", False), profiles.MONITOR)
+        self.assertEqual(profiles.effective("nesmysl", True), profiles.TRAY)
+
+    def test_tray_runs_nothing(self):
+        p = profiles.plan(profiles.TRAY, DESK)
+        self.assertFalse(p.streams or p.modules or p.overlay or p.gui or p.laptop_screen_off)
+
+    def test_monitor_shows_gui_without_modules(self):
+        p = profiles.plan(profiles.MONITOR, DESK)
+        self.assertTrue(p.gui and p.streams)
+        self.assertFalse(p.modules or p.overlay)
+
+    def test_glasses_runs_modules_and_hides_laptop_screen(self):
+        p = profiles.plan(profiles.GLASSES, DESK)
+        self.assertTrue(p.modules and p.overlay and p.laptop_screen_off)
+
+    def test_closed_lid_overrides_any_profile(self):
+        for eff in (profiles.TRAY, profiles.MONITOR, profiles.GLASSES):
+            for mode in (BAG, WAITING):
+                p = profiles.plan(eff, mode)
+                self.assertTrue(p.streams and p.modules and p.overlay)
+                self.assertFalse(p.gui or p.laptop_screen_off)
+
+
 if __name__ == "__main__":
     unittest.main()

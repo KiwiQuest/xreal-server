@@ -123,6 +123,7 @@ if IS_WIN:
 WM_CLOSE, WM_DESTROY, WM_NULL = 0x0010, 0x0002, 0x0000
 WM_POWERBROADCAST, WM_DEVICECHANGE, WM_DISPLAYCHANGE, WM_INPUT = 0x0218, 0x0219, 0x007E, 0x00FF
 WM_QUERYENDSESSION, WM_ENDSESSION = 0x0011, 0x0016
+WM_HOTKEY = 0x0312
 WM_APP = 0x8000
 WM_TRAY, WM_REFRESH = WM_APP + 1, WM_APP + 2
 WM_LBUTTONUP, WM_RBUTTONUP, WM_LBUTTONDBLCLK = 0x0202, 0x0205, 0x0203
@@ -214,6 +215,9 @@ class NativeWindow(threading.Thread):
                                     RAWINPUTDEVICE(1, 6, 0x100, self.hwnd))
         if not user32.RegisterRawInputDevices(devs, 2, ctypes.sizeof(RAWINPUTDEVICE)):
             self.log("[WIN] Raw Input nejde zaregistrovat, fyzický vstup nepoznám")
+        # Ctrl+Alt+T = kdykoliv zpět do režimu Tray (MOD_ALT | MOD_CONTROL | MOD_NOREPEAT)
+        if not user32.RegisterHotKey(self.hwnd, 1, 0x1 | 0x2 | 0x4000, ord("T")):
+            self.log("[WIN] Ctrl+Alt+T už používá jiný program")
         self._tray(0)
 
     def _nid(self) -> "NOTIFYICONDATAW":
@@ -270,6 +274,9 @@ class NativeWindow(threading.Thread):
                 elif wp in (PBT_APMRESUMEAUTOMATIC, PBT_APMRESUMESUSPEND):
                     self.post(("power", "resume"))
                 return 1
+            elif msg == WM_HOTKEY:
+                self.post(("hotkey", int(wp)))
+                return 0
             elif msg == WM_DEVICECHANGE:
                 self.post(("devchange",))
             elif msg == WM_DISPLAYCHANGE:
@@ -418,3 +425,79 @@ def single_instance(name: str = "Local\\XrealKorenSupervisor") -> bool:
         return True
     _mutex = kernel32.CreateMutexW(None, False, name)
     return ctypes.get_last_error() != 183          # ERROR_ALREADY_EXISTS
+
+
+# ------------------------------------------------------------- displej notebooku
+# Topologie jako Win+P: 1 = jen tento počítač, 2 = duplikovat, 4 = rozšířit, 8 = jen druhá obrazovka
+TOPO_INTERNAL, TOPO_CLONE, TOPO_EXTEND, TOPO_EXTERNAL = 1, 2, 4, 8
+
+
+def display_topology() -> Optional[int]:
+    """Aktuální topologie z databáze Windows (jako Win+P), None = nejde zjistit."""
+    if not IS_WIN:
+        return None
+    QDC_DATABASE_CURRENT = 0x4
+    npath, nmode = wintypes.UINT(), wintypes.UINT()
+    if user32.GetDisplayConfigBufferSizes(QDC_DATABASE_CURRENT, ctypes.byref(npath), ctypes.byref(nmode)) != 0:
+        return None
+    paths = (ctypes.c_ubyte * (72 * max(1, npath.value)))()     # DISPLAYCONFIG_PATH_INFO = 72 B
+    modes = (ctypes.c_ubyte * (64 * max(1, nmode.value)))()     # DISPLAYCONFIG_MODE_INFO = 64 B
+    topo = wintypes.UINT()
+    if user32.QueryDisplayConfig(QDC_DATABASE_CURRENT, ctypes.byref(npath), paths, ctypes.byref(nmode),
+                                 modes, ctypes.byref(topo)) != 0:
+        return None
+    return topo.value
+
+
+def set_display_topology(topo: int, log=print) -> bool:
+    """Přepne topologii (SDC_APPLY | SDC_TOPOLOGY_*), stejně jako Win+P."""
+    if not IS_WIN or topo not in (1, 2, 4, 8):
+        return False
+    r = user32.SetDisplayConfig(0, None, 0, None, 0x80 | topo)
+    if r != 0:
+        log(f"[DISP] SetDisplayConfig({topo}) selhal: {r}")
+    return r == 0
+
+
+# ------------------------------------------------------------------- autostart
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+RUN_NAME = "XrealKoren"
+
+
+def autostart_command(script: str) -> str:
+    exe = sys.executable
+    low = exe.lower()
+    if low.endswith("python.exe"):
+        exe = exe[:-len("python.exe")] + "pythonw.exe"
+    return f'"{exe}" "{script}"'
+
+
+def autostart_get() -> Optional[str]:
+    if not IS_WIN:
+        return None
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+            return winreg.QueryValueEx(k, RUN_NAME)[0]
+    except OSError:
+        return None
+
+
+def autostart_set(on: bool, script: str, log=print) -> bool:
+    """Spouštění s Windows (klíč Run v HKCU, jen pro tohoto uživatele, bez admin práv)."""
+    if not IS_WIN:
+        return False
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+            if on:
+                winreg.SetValueEx(k, RUN_NAME, 0, winreg.REG_SZ, autostart_command(script))
+            else:
+                try:
+                    winreg.DeleteValue(k, RUN_NAME)
+                except FileNotFoundError:
+                    pass
+        return True
+    except OSError as e:
+        log(f"[AUTOSTART] {e}")
+        return False

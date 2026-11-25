@@ -27,6 +27,10 @@ class HeadMouse(Module):
 
     def start(self, ctx):
         super().start(ctx)
+        if getattr(self, "engine", None) is not None:      # znovu zapnutý modul: engine i kroužek už jsou
+            self.rt.running = True
+            self.paused = False
+            return
         self.mcfg = MouseConfig().load()
         self.rt = Runtime()
         self.engine = Engine(self.mcfg, self.rt, io=NullOutput() if ctx.dry else WinOutput(),
@@ -45,7 +49,9 @@ class HeadMouse(Module):
     def stop(self):
         self.rt.enabled = False
         self.engine.buttons.abort()
-        self.rt.running = False
+        if self.ring and self.ring.visible:
+            self.ring.win.withdraw()
+            self.ring.visible = False
 
     @property
     def on(self) -> bool:

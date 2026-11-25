@@ -36,6 +36,7 @@ class GlassesLink:
         self.imu_status = "nepřipojeno"
         self._absent_since: Optional[float] = None
         self._wake = threading.Event()
+        self.streams = threading.Event()          # IMU + tlačítko jen když je potřeba (režim Tray = ne)
         self._recal = False
 
     # ----------------------------------------------------------------- dotazy
@@ -53,6 +54,11 @@ class GlassesLink:
 
     def recalibrate(self):
         self._recal = True
+
+    def set_streams(self, on: bool):
+        (self.streams.set if on else self.streams.clear)()
+        if not on:
+            self.imu_t = 0.0
 
     def check_now(self):
         """Změna USB (WM_DEVICECHANGE): zkontrolovat přítomnost hned."""
@@ -92,6 +98,8 @@ class GlassesLink:
 
     def _imu_loop(self):
         while self.running:
+            if not self.streams.wait(1.0):
+                continue
             sock = None
             try:
                 sock = socket.create_connection((self.host, protocol.PORT_IMU), timeout=3.0)
@@ -99,7 +107,7 @@ class GlassesLink:
                 self.imu_status = "připojeno"
                 self.ori.start_calibration()
                 buf = bytearray()
-                while self.running:
+                while self.running and self.streams.is_set():
                     data = sock.recv(65536)
                     if not data:
                         raise OSError("spojení ukončeno")
@@ -118,7 +126,7 @@ class GlassesLink:
                         sock.close()
                     except OSError:
                         pass
-            if self.running:
+            if self.running and self.streams.is_set():
                 time.sleep(2.0)
 
     def _sample(self, s):
@@ -136,13 +144,15 @@ class GlassesLink:
 
     def _ctrl_loop(self):
         while self.running:
+            if not self.streams.wait(1.0):
+                continue
             sock = None
             try:
                 sock = socket.create_connection((self.host, protocol.PORT_CONTROL), timeout=3.0)
                 sock.settimeout(1.0)
                 self.btn_connected = True
                 buf = bytearray()
-                while self.running:
+                while self.running and self.streams.is_set():
                     try:
                         data = sock.recv(4096)
                     except socket.timeout:
@@ -167,5 +177,5 @@ class GlassesLink:
                         sock.close()
                     except OSError:
                         pass
-            if self.running:
+            if self.running and self.streams.is_set():
                 time.sleep(2.0)

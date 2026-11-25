@@ -20,6 +20,10 @@ def use_suite():
 
 @dataclass
 class Config:
+    # --- provozní režim (profiles.py): auto | tray | monitor | glasses ---
+    profile: str = "auto"
+    autostart: bool = True             # spouštět s Windows (klíč Run v HKCU)
+    saved_topology: int = 0            # Win+P stav před zhasnutím displeje notebooku (0 = nic)
     # --- přechod "notebook v tašce" ---
     wait_minutes: float = 5.0          # jak dlouho po zavření víka čekat na brýle, pak hibernovat
     bag_lost_grace_s: float = 20.0     # v tašce: brýle zmizely -> chvíli tolerovat výpadek kabelu

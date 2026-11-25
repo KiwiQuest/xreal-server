@@ -24,7 +24,22 @@ Potřebuje jen Python 3.10+ s tkinter. Bere protokol brýlí a myš hlavou ze sl
 Ovládací panely → Možnosti napájení → Nastavení tlačítek napájení → **Při zavření víka: Nedělat nic**
 (na baterii i v síti). Když to tak není, kořen to ukáže v systray i v brýlích.
 
-## Jak se chová
+## Provozní režimy
+
+Po startu s Windows (výchozí) se kořen sám podívá po brýlích: **jsou připojené → Vše v brýlích,
+nejsou → Tray**. Režim jde kdykoliv změnit v systray nebo v okně nastavení, **Ctrl+Alt+T vždy přepne do Tray**.
+
+| Režim | Co běží | Ovládání |
+|---|---|---|
+| 1. **Tray** | jen ikona a okno nastavení na požádání; žádné moduly, overlay ani spojení s IMU (šetří výkon) | myš a klávesnice |
+| 2. **GUI na druhém monitoru** | okno nastavení a živého stavu trvale na druhém monitoru, spojení s brýlemi kvůli stavu, moduly ne | myš a klávesnice |
+| 3. **Vše v brýlích** | víko otevřené, displej notebooku zhasne (jako Win+P „Jen druhá obrazovka“), moduly a overlay běží v brýlích; při odchodu z režimu se displej vrátí | myš a klávesnice |
+| 4. **Zavřené víko** | přebije režimy 1-3: notebook v tašce, nebo odpočet a hibernace | jen hlava a tlačítko brýlí |
+
+V režimech 1-3 se ovládání hlavou samo **nezapíná**, ale jde kdykoliv zapnout ručně (systray, okno nastavení,
+menu v brýlích); v Tray režimu se kvůli tomu spustí jen myš hlavou a spojení s brýlemi.
+
+## Jak se chová víko
 
 | Situace | Co kořen udělá |
 |---|---|
@@ -47,6 +62,8 @@ V systray (pravé tlačítko): stav, ruční **Režim bez rukou** (stolní PC, J
 |---|---|
 | `koren.py`, `koren.bat` | spuštění a supervizor (restart po pádu nebo zaseknutí) |
 | `koren/states.py` | stavový automat DESK / BAG / WAITING / SUSPEND |
+| `koren/profiles.py` | provozní režimy Tray / GUI na monitoru / Vše v brýlích: co v nich běží |
+| `koren/settings.py` | okno nastavení a stavu |
 | `koren/advisor.py` | rádce: jaké ovládání má uživatel, co mu ukázat, poznání potíží |
 | `koren/gestures.py`, `koren/menu.py` | kývnutí, zavrtění, podržení tlačítka, menu ovládané hlavou |
 | `koren/overlay.py` | průhledné vrstvy přes brýle |

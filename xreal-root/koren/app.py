@@ -14,7 +14,7 @@ import threading
 import time
 from typing import Optional
 
-from . import win
+from . import profiles, win
 from .advisor import Snapshot, Struggle, capabilities, guidance
 from .config import LOG_DIR, Config
 from .gestures import NOD, SHAKE, ButtonTracker
@@ -22,9 +22,10 @@ from .glasses import GlassesLink
 from .menu import Menu, MenuItem, Prompt
 from .modules import _FAIL, Module, ModuleContext, ModuleManager
 from .overlay import Overlay, glasses_display_present, pick_display
+from .settings import SettingsWindow
 from .states import BAG, DESK, MODE_LABELS, SUSPEND, WAITING, Machine
 
-TICK_MS = 30
+TICK_MS = 30          # první tik; dál podle režimu (profiles.Plan.tick_ms)
 ALL_MODULES = ("head_mouse", "clock", "voice")
 TRAY_ICON = {DESK: "desk", BAG: "bag", WAITING: "wait", SUSPEND: "wait"}
 BEEPS = {"bag": ((880, 110), (1320, 150)), "wait": ((660, 220),), "warn": ((520, 140), (520, 140)),
@@ -83,6 +84,14 @@ class App:
         self._t_hb = self._t_disp = self._t_slow = 0.0
         self._glasses_display = False
         self._focus = False
+        self.profile_eff = profiles.TRAY
+        self.plan = profiles.plan(profiles.TRAY, DESK)
+        self._plan_key = None
+        self._plan_logged = False
+        self.head_forced = False            # ovládání hlavou zapnuté ručně v režimech 1-3
+        self._screen_off = False
+        self.settings = SettingsWindow(self)
+        self._t_gui = 0.0
 
     # ================================================================ start / stop
     def run(self):
@@ -91,13 +100,13 @@ class App:
                  f"dry: {self.cfg.dry_run}")
         self.native.start()
         self.native.ready.wait(3.0)
-        self.mods.load(ALL_MODULES)
-        for mid, mod in self.mods.mods.items():
-            if self.cfg.modules.get(mid, False):
-                self._start_module(mod)
+        self.mods.load(ALL_MODULES)            # načíst; spustí je až plán podle režimu
         self.glasses.sinks.append(self._imu_to_modules)
         self.glasses.start()
         self.overlay.set_monitor(pick_display(None))
+        if not self.cfg.dry_run:
+            self._sync_autostart()
+        self._sync_plan(time.monotonic())
         self.root.after(TICK_MS, self._tick)
         try:
             self.root.mainloop()
@@ -109,6 +118,7 @@ class App:
             return
         self.running = False
         self.log("[KOREN] konec")
+        self._laptop_screen(False)
         self.mods.stop_all()
         self.glasses.stop()
         self.native.close()
@@ -147,7 +157,7 @@ class App:
             self.log(f"[KOREN] chyba v hlavní smyčce: {type(e).__name__}: {e}\n{traceback.format_exc(limit=5)}")
         finally:
             if self.running:
-                self.root.after(TICK_MS, self._tick)
+                self.root.after(self.plan.tick_ms, self._tick)
 
     def _step(self):
         now = time.monotonic()
@@ -167,8 +177,9 @@ class App:
                 break
             self._event(ev, now)
 
+        self._sync_plan(now)
         hold = self.btn.tick(now)
-        if hold == "hold":
+        if hold == "hold" and self.plan.overlay:
             if self.menu:
                 self.close_menu(abandoned=False)
             elif self.prompt is None:
@@ -201,6 +212,9 @@ class App:
         self._focus_update()
         self.mods.each("tick", now)
         self._render(now)
+        if now - self._t_gui > 1.0:
+            self._t_gui = now
+            self.settings.refresh()
 
     # =================================================================== události
     def _event(self, ev: tuple, now: float):
@@ -237,7 +251,10 @@ class App:
             self._tray_cmd(ev[1])
         elif kind == "tray_open":
             self.overlay.t_change = now           # ukázat celou nápovědu znovu
-            self.native.balloon("XREAL Kořen", self._status_line())
+            self.settings.show()
+        elif kind == "hotkey":
+            self.log("[KOREN] Ctrl+Alt+T: režim Tray")
+            self.set_profile(profiles.TRAY)
         elif kind in ("resumed", "suspend_failed", "hibernate_now", "wait_longer", "manual"):
             self._apply(self.machine.handle(ev, now))
         elif kind == "endsession":
@@ -350,6 +367,9 @@ class App:
         if m.facts.manual:
             items.append(MenuItem("manual_off", "Ukončit režim bez rukou",
                                   action=lambda: self.q.put(("manual", False))))
+        if self.profile_eff != profiles.TRAY and m.facts.lid != "closed":
+            items.append(MenuItem("tray", "Přepnout do režimu Tray", "nic dalšího neběží",
+                                  action=lambda: self.set_profile(profiles.TRAY)))
         items.append(MenuItem("help", "Co teď můžu dělat?", action=self._explain))
         items.append(MenuItem("calib", "Znovu kalibrovat brýle", "drž hlavu 1 s v klidu",
                               action=self.recalibrate))
@@ -415,6 +435,122 @@ class App:
         self.overlay.t_change = time.monotonic()
         self.say(f"{g.title}. {g.text} {opts}")
 
+    # ============================================================ provozní režimy
+    def set_profile(self, p: str):
+        if p not in profiles.PROFILES:
+            return
+        if p == profiles.TRAY:
+            self.head_forced = False           # Tray = opravdu nic neběží
+        self.cfg.profile = p
+        self.cfg.save()
+        self._plan_key = None
+        self.log(f"[PROFILE] {p}")
+
+    def set_head_mouse(self, on: bool):
+        """Ruční zapnutí ovládání hlavou (v režimech 1-3 se samo nezapíná, ale jde zapnout)."""
+        self.head_forced = on
+        if on and not self.cfg.modules.get("head_mouse"):
+            self.cfg.modules["head_mouse"] = True
+        self._plan_key = None
+        self._sync_plan(time.monotonic())
+        hm = self.mods.get("head_mouse")
+        if hm is not None:
+            self.mods.call(hm, "set_on", on)
+            if self.machine.mode == DESK:
+                hm.user_wants = on
+
+    def set_autostart(self, on: bool):
+        self.cfg.autostart = on
+        self.cfg.save()
+        if not self.cfg.dry_run:
+            self._sync_autostart()
+
+    def _sync_autostart(self):
+        script = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "koren.py"))
+        want = win.autostart_command(script) if self.cfg.autostart else None
+        if win.autostart_get() != want:
+            ok = win.autostart_set(self.cfg.autostart, script, self.log)
+            self.log(f"[AUTOSTART] {'zapnuto' if self.cfg.autostart else 'vypnuto'}: {'OK' if ok else 'chyba'}")
+
+    def _sync_plan(self, now: float):
+        """Srovná, co běží, s provozním režimem a stavem víka (volá se každý tik, levné)."""
+        eff = profiles.effective(self.cfg.profile, self.machine.facts.glasses)
+        pl = profiles.plan(eff, self.machine.mode)
+        key = (eff, pl, self.head_forced, tuple(sorted(self.cfg.modules.items())))
+        if key == self._plan_key:
+            return
+        if not self._plan_logged or eff != self.profile_eff or pl != self.plan:
+            self.log(f"[PLAN] {eff}/{self.machine.mode}: {pl}")
+        self._plan_logged = True
+        self._plan_key = key
+        self.profile_eff, self.plan = eff, pl
+        self.glasses.set_streams(pl.streams or self.head_forced)
+        for mid, mod in self.mods.mods.items():
+            want = self.cfg.modules.get(mid, False) and (pl.modules or (mid == "head_mouse" and self.head_forced))
+            if want and not mod.active:
+                self._start_module(mod)
+                if mid == "head_mouse" and self.head_forced and mod.active:
+                    self.mods.call(mod, "set_on", True)
+            elif not want and mod.active:
+                self._stop_module(mod)
+        if not pl.overlay:
+            self.close_menu(abandoned=False)
+            self.prompt = None
+        if pl.gui:
+            self.settings.show(monitor=self._second_monitor(), pinned=True)
+        elif self.settings.pinned:
+            self.settings.pinned = False
+            self.settings.hide()
+        self._laptop_screen(pl.laptop_screen_off)
+
+    def _second_monitor(self):
+        """Druhý monitor pro okno nastavení: brýle nebo jiný než hlavní, jinak hlavní."""
+        try:
+            from xreal import winapi
+            mons = winapi.list_monitors()
+        except Exception:
+            return None
+        for m in mons:
+            if m.get("xreal") and not m.get("primary"):
+                return m
+        for m in mons:
+            if not m.get("primary"):
+                return m
+        return mons[0] if mons else None
+
+    def _laptop_screen(self, off: bool):
+        """Režim 3: displej notebooku zhasnout (jako Win+P „Jen druhá obrazovka“), pak vrátit."""
+        if off and not self._screen_off:
+            try:
+                from xreal import winapi
+                mons = winapi.list_monitors()
+            except Exception:
+                mons = []
+            if len(mons) < 2 or not any(m.get("xreal") for m in mons):
+                return                                  # notebook už nic neukazuje, nebo brýle chybí
+            topo = win.display_topology() or win.TOPO_EXTEND
+            self._screen_off = True
+            if self.cfg.dry_run:
+                self.log(f"[DISP] (dry) displej notebooku by se zhasnul (teď {topo})")
+                return
+            self.cfg.saved_topology = topo
+            self.cfg.save()
+            win.set_display_topology(win.TOPO_EXTERNAL, self.log)
+            self.log("[DISP] displej notebooku zhasnut")
+        elif not off and (self._screen_off or self.cfg.saved_topology):
+            was = self._screen_off
+            self._screen_off = False
+            if self.cfg.dry_run:
+                if was:
+                    self.log("[DISP] (dry) displej notebooku by se rozsvítil")
+                return
+            topo = self.cfg.saved_topology or win.TOPO_EXTEND
+            self.cfg.saved_topology = 0
+            self.cfg.save()
+            if topo != win.TOPO_EXTERNAL:
+                win.set_display_topology(topo, self.log)
+                self.log(f"[DISP] displej notebooku vrácen ({topo})")
+
     # ================================================================== stav
     def snapshot(self) -> Snapshot:
         m = self.machine
@@ -430,12 +566,17 @@ class App:
             head_mouse_on=bool(hm and hm.on), modules_failed=tuple(self.mods.failed))
 
     def _render(self, now: float):
+        tip = f"XREAL Kořen: {MODE_LABELS[self.machine.mode]} · {profiles.SHORT[self.profile_eff]}"
+        if not self.plan.overlay:
+            self.overlay.help.show(False)
+            self.native.set_tray(tip, TRAY_ICON.get(self.machine.mode, "desk"))
+            return
         s = self.snapshot()
         c = capabilities(s, self.cfg.physical_input_fresh_s)
         st = self.struggle.level(now)
         g = guidance(s, c, st, self.machine.wait_s)
         self.overlay.render(g, self.menu, self.prompt, st, self.btn.held_for(now), self.cfg.menu_hold_s)
-        self.native.set_tray(f"XREAL Kořen: {MODE_LABELS[s.mode]}", TRAY_ICON.get(s.mode, "desk"))
+        self.native.set_tray(tip, TRAY_ICON.get(s.mode, "desk"))
 
     def _status_line(self) -> str:
         s = self.snapshot()
@@ -455,13 +596,20 @@ class App:
         if self.lid_action and self.power["lid"] and any(v != 0 for v in self.lid_action.values()):
             e.append((2, "Pozor: zavření víka není „Nedělat nic“", 1))
         e.append((0, "", -1))
-        e.append((10, "Režim bez rukou (ručně)", 8 if self.machine.facts.manual else 0))
-        e.append((11, "Ukázat nápovědu v brýlích", 0))
+        for i, p in enumerate(profiles.PROFILES):
+            e.append((50 + i, profiles.LABELS[p] + ("   (Ctrl+Alt+T)" if p == profiles.TRAY else ""),
+                      8 if self.cfg.profile == p else 0))
+        e.append((0, "", -1))
+        e.append((12, "Nastavení a stav…", 0))
+        hm = self.mods.mods.get("head_mouse")
+        e.append((14, "Ovládání hlavou zapnuté", 8 if (hm and hm.active and hm.on) else 0))
+        e.append((10, "Režim bez rukou i s otevřeným víkem", 8 if self.machine.facts.manual else 0))
+        e.append((13, "Spouštět s Windows", 8 if self.cfg.autostart else 0))
         e.append((0, "", -1))
         for i, mid in enumerate(ALL_MODULES):
             mod = self.mods.mods.get(mid)
             if mod:
-                e.append((20 + i, f"Modul: {mod.name}", 8 if mod.active else 0))
+                e.append((20 + i, f"Modul: {mod.name}", 8 if self.cfg.modules.get(mid) else 0))
         if self.cfg.dry_run:
             e.append((0, "", -1))
             e.append((30, "Zkouška: zavřít víko", 0))
@@ -478,19 +626,25 @@ class App:
             self._apply(self.machine.handle(("manual", not self.machine.facts.manual), now))
         elif cid == 11:
             self.overlay.t_change = now
+        elif cid == 12:
+            self.settings.show()
+        elif cid == 13:
+            self.set_autostart(not self.cfg.autostart)
+        elif cid == 14:
+            hm = self.mods.mods.get("head_mouse")
+            self.set_head_mouse(not (hm and hm.active and hm.on))
+        elif 50 <= cid < 50 + len(profiles.PROFILES):
+            self.set_profile(profiles.PROFILES[cid - 50])
         elif 20 <= cid < 20 + len(ALL_MODULES):
             mid = ALL_MODULES[cid - 20]
             mod = self.mods.mods.get(mid)
             if mod:
-                if mod.active:
-                    self._stop_module(mod)
-                else:
-                    if mod.name in self.mods.failed:
-                        self.mods.failed.remove(mod.name)
-                    self.mods.errors[mid] = 0
-                    self._start_module(mod)
-                self.cfg.modules[mid] = mod.active
+                self.cfg.modules[mid] = not self.cfg.modules.get(mid, False)
+                if mod.name in self.mods.failed:
+                    self.mods.failed.remove(mod.name)
+                self.mods.errors[mid] = 0
                 self.cfg.save()
+                self._plan_key = None             # srovnat moduly podle režimu
         elif cid == 30:
             self._apply(self.machine.handle(("lid", "closed"), now))
         elif cid == 31:

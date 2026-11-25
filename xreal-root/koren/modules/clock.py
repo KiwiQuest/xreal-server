@@ -23,7 +23,7 @@ def battery():
 class Clock(Module):
     id = "clock"
     name = "Hodiny a baterie"
-    description = "Čas a stav baterie nenápadně v rohu, jen v režimu bez rukou."
+    description = "Čas a stav baterie nenápadně v rohu brýlí."
     z = 50
     needs = ("display",)
 
@@ -36,7 +36,7 @@ class Clock(Module):
         self.L.show(False)
 
     def tick(self, now):
-        show = self.ctx.mode() in ("BAG", "WAITING")
+        show = self.ctx.mode() != "SUSPEND"          # modul běží jen v režimech s brýlemi
         self.L.show(show)
         if not show:
             return
