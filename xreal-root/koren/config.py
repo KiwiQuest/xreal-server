@@ -36,6 +36,10 @@ class Config:
     menu_dwell_s: float = 2.5          # podržet pohled na položce = potvrzení
     prompt_timeout_s: float = 20.0     # otázka bez reakce -> zopakovat jednodušeji
     physical_input_fresh_s: float = 30.0   # fyzická klávesnice/myš použitá před méně než X s = má ruce
+    # --- myš hlavou (pointer_curve.py) ---
+    mouse_speed: float = 1.0           # celková rychlost (0.3 - 3)
+    mouse_precision: float = 0.6       # 0 = lineární, 1 = pomalu velmi přesně, rychle daleko
+    mouse_clip: bool = True            # kurzor držet na monitoru brýlí (v tašce a ve Vše v brýlích)
     # --- overlay ---
     overlay_alpha: float = 0.88
     overlay_scale: float = 1.0

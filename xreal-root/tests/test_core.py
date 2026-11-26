@@ -359,5 +359,41 @@ class HomeLayoutTest(unittest.TestCase):
         self.assertEqual(hit(pos, 16, 12, 10.0, pos[0][1]), -1)   # mezera mezi dlaždicemi
 
 
+from koren.pointer_curve import PRESETS, CurvePointer, gain  # noqa: E402
+
+
+class PointerCurveTest(unittest.TestCase):
+    def test_slow_is_precise_fast_is_far(self):
+        slow, fast = gain(3, 15, 1.0, 0.6), gain(90, 15, 1.0, 0.6)
+        self.assertLess(slow, 15)
+        self.assertGreater(fast, 15)
+        last = 0
+        for w in range(0, 120, 5):                       # křivka nikde neklesá
+            g = gain(w, 15, 1.0, 0.6)
+            self.assertGreaterEqual(g + 1e-9, last)
+            last = g
+
+    def test_zero_precision_is_linear(self):
+        self.assertAlmostEqual(gain(2, 15, 1.0, 0.0), gain(100, 15, 1.0, 0.0))
+
+    def test_tremor_is_filtered(self):
+        class Cfg:
+            sens, deadzone, flip_h, flip_v, smooth_ms = 15.0, 1.0, False, False, 40.0
+
+        class P:
+            mouse_speed, mouse_precision = PRESETS["presna"]
+
+        class O:
+            yaw_rate_dps = pitch_rate_dps = pitch_deg = 0.0
+
+        cp = CurvePointer(Cfg(), P())
+        o = O()
+        moved = 0.0
+        for i in range(1000):                            # třes ±4 °/s, 50 Hz, 1 s
+            o.yaw_rate_dps = 4.0 if (i // 10) % 2 == 0 else -4.0
+            moved += cp.step(o, 0.001, "relative", None).dx
+        self.assertLess(abs(moved), 3.0)                 # kurzor se skoro nehne
+
+
 if __name__ == "__main__":
     unittest.main()

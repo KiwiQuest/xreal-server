@@ -244,6 +244,9 @@ function renderDock() {
     d.appendChild(b);
   }
 }
+let rt = null;
+addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (autoTile) arrange('tile'); }, 250); });
+$('desk').addEventListener('mousedown', e => { if (e.target.closest('.bar, .grip')) autoTile = false; });
 function arrange(mode) {
   const list = [...wins.values()].filter(w => !w.el.classList.contains('min'));
   const D = $('desk'), W = D.clientWidth, H = D.clientHeight - 44, n = list.length || 1;
@@ -267,10 +270,10 @@ function current() {
     x: parseInt(w.el.style.left), y: parseInt(w.el.style.top), w: parseInt(w.el.style.width), h: parseInt(w.el.style.height),
     min: w.el.classList.contains('min'), max: w.el.classList.contains('max') })) };
 }
-$('b-add').onclick = () => { const w = mkWin({ src: $('srcsel').value, x: 40 + wins.size * 30, y: 30 + wins.size * 30 }); renderWin(w); };
+$('b-add').onclick = () => { autoTile = false; const w = mkWin({ src: $('srcsel').value, x: 40 + wins.size * 30, y: 30 + wins.size * 30 }); renderWin(w); };
 $('b-tile').onclick = () => arrange('tile');
-$('b-cascade').onclick = () => arrange('cascade');
-$('b-save').onclick = () => post('/layout', current()).then(() => flash('rozložení uloženo'));
+$('b-cascade').onclick = () => { autoTile = false; arrange('cascade'); };
+$('b-save').onclick = () => (autoTile = false, post('/layout', current()).then(() => flash('rozložení uloženo')));
 function setZoom(zm) { layout.zoom = Math.max(0.8, Math.min(2, +zm.toFixed(2))); document.body.style.zoom = layout.zoom; }
 $('b-zm').onclick = () => setZoom((layout.zoom || 1.2) - 0.1);
 $('b-zp').onclick = () => setZoom((layout.zoom || 1.2) + 0.1);
@@ -343,10 +346,17 @@ const DEFAULT = () => {
     { id: 'w-log', src: 'log', x: 10, y: H * 0.58, w: W * 0.97, h: H * 0.40, op: 0.8 },
   ] };
 };
+// Bez uloženého rozložení se okna skládají vedle sebe podle skutečné velikosti plochy
+// (okno prohlížeče se po startu ještě přesouvá na brýle a mění velikost); jakmile uživatel
+// s okny pohne nebo rozložení uloží, už se samo nepřeskládá.
+let autoTile = false;
 fetch('/layout').then(r => r.json()).catch(() => ({})).then(l => {
-  setZoom((l && l.zoom) || 1.2);                     // v brýlích je 1920×1080 drobné, výchozí 120 %
-  layout = (l && l.wins && l.wins.length) ? l : { ...DEFAULT(), topics: l && l.topics, zoom: layout.zoom };
+  setZoom((l && l.zoom) || (innerWidth < 1500 ? 1.0 : 1.2));   // menší displej = menší zvětšení
+  const saved = !!(l && l.wins && l.wins.length);
+  layout = saved ? l : { ...DEFAULT(), topics: l && l.topics, zoom: layout.zoom };
   for (const s of layout.wins) mkWin(s);
+  autoTile = !saved;
+  if (autoTile) arrange('tile');
   renderDock();
   fetch('/state').then(r => r.json()).then(apply).catch(() => {});
   connect();

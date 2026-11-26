@@ -62,6 +62,13 @@ Plocha je webová stránka z lokálního serveru kořene (`127.0.0.1:8790`, jen 
 rámečku, které kořen položí přesně na monitor brýlí. Data jdou živě (Server-Sent Events), příkazy přijímá jen
 od vlastní stránky. Moduly na ni přidávají obsah přes `ui()` a `ui_action()`.
 
+### Rychlost myši hlavou
+
+Zisk kurzoru závisí na rychlosti hlavy (`koren/pointer_curve.py`): **pomalý pohyb = přesné míření,
+rychlý = přes obrazovku**, třes hlavy se vyhlazuje. Předvolby **Přesná / Střední / Rychlá** a **Pomaleji /
+Rychleji / Přesnost ±** jsou na kartě Myš hlavou na ploše a v menu brýlí (podržet tlačítko). V tašce a v režimu
+Vše v brýlích drží kořen kurzor na monitoru brýlí, takže okraje a rohy (Start, zavírací křížky) se trefí samy.
+
 ## Domov: overlay menu dlaždic
 
 Z menu (podržet tlačítko brýlí) nebo z plochy se otevře **Domov**: dlaždice visí v prostoru kolem tebe,
@@ -105,6 +112,7 @@ V systray (pravé tlačítko): stav, ruční **Režim bez rukou** (stolní PC, J
 | `koren/profiles.py` | provozní režimy Tray / GUI na monitoru / Vše v brýlích: co v nich běží |
 | `koren/settings.py` | okno nastavení a stavu |
 | `koren/ui_server.py`, `koren/ui/index.html`, `koren/ui_window.py` | kořenová plocha: server, stránka, okno přes brýle |
+| `koren/pointer_curve.py` | zrychlení myši hlavou podle rychlosti hlavy, vyhlazení třesu |
 | `koren/sysinfo.py` | CPU, paměť, baterie bez knihoven |
 | `koren/displays.py` | monitory podle jména a EDID, odhad a potvrzení monitoru brýlí |
 | `koren/advisor.py` | rádce: jaké ovládání má uživatel, co mu ukázat, poznání potíží |
