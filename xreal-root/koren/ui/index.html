@@ -60,6 +60,8 @@
   .acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
   #log { font-size:12px; color:#8fd8b0; white-space:pre-wrap; }
   #headcv { width:100%; height:120px; display:block; }
+  /* modul s vlastní stránkou (iframe): vyplní celé okno, průhledné pozadí */
+  .modframe { position:absolute; inset:0; width:100%; height:100%; border:0; background:transparent; }
 
   #deskbar { position:absolute; left:8px; bottom:8px; display:flex; gap:6px; z-index:9500; align-items:center; }
   #dock { display:flex; gap:6px; }
@@ -131,6 +133,8 @@ function renderSource(src, body) {
   if (BUILTIN[src]) return BUILTIN[src].render(body);
   const m = (S.modules || []).find(m => 'mod:' + m.id === src);
   if (!m) { setHtml(body, '<div class="info">modul neběží</div>'); return; }
+  // vlastní stránka modulu: iframe se vytvoří jednou a dál se nepřekresluje (běží v ní video)
+  if (m.frame) { setHtml(body, `<iframe class="modframe" src="${esc(m.frame)}" allowtransparency="true"></iframe>`); return; }
   setHtml(body, moduleHtml(m, 'win'));
 }
 function moduleHtml(m, where) {
@@ -331,6 +335,27 @@ function apply(st) {
   setHtml(sel, srcs.map(s => `<option value="${s.id}">${esc(s.title)}</option>`).join(''));
   if (keep) sel.value = keep;
   for (const [, w] of wins) renderWin(w);
+  openRequested(first);
+}
+// modul chce ukázat své okno (Domov, menu brýlí, karta v panelu): otevřít nebo přenést dopředu
+const shown = {};
+function openRequested(first) {
+  for (const m of S.modules || []) {
+    if (!m.window || !m.active) continue;
+    const prev = shown[m.id];
+    shown[m.id] = m.show || 0;
+    if (first || prev === undefined || !(m.show > prev)) continue;
+    const src = 'mod:' + m.id;
+    let w = [...wins.values()].find(w => w.src === src);
+    if (!w) {
+      autoTile = false;
+      const D = $('desk');
+      w = mkWin({ src, x: D.clientWidth * 0.08, y: 10, w: D.clientWidth * 0.84, h: (D.clientHeight - 44) * 0.92 });
+    }
+    w.el.classList.remove('min'); w.el.style.zIndex = ++z; w.op = 1; w.el.style.opacity = 1;
+    document.querySelectorAll('.win').forEach(x => x.classList.toggle('active', x === w.el));
+    renderDock(); renderWin(w);
+  }
 }
 function connect() {
   const es = new EventSource('/events');

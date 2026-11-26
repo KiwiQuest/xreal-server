@@ -52,7 +52,9 @@ class Config:
         "head_mouse": True,
         "clock": True,
         "voice": False,
+        "faces": True,
     })
+    faces: dict = field(default_factory=dict)   # modul Tváře: camera (číslo), threshold, idle_off_s...
 
     def load(self, path: str = CONFIG_FILE):
         try:

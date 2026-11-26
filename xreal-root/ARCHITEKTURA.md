@@ -114,6 +114,10 @@ Výjimka v modulu se zaloguje, po 3 chybách se modul vypne a rádce to oznámí
 stavový řádek s rotujícími zprávami, okna modulů 1..N (vedle sebe / přes sebe s průhledností) a pevný panel
 control modulů. Modul se na ní ukáže přes `ui()` (`window` = jde otevřít jako okno, `control` = karta v panelu,
 `lines`, `actions`) a reaguje přes `ui_action()`. Běží v režimu Vše v brýlích a po zavření víka (`Plan.ui`).
+Modul, který potřebuje vlastní obsah (video, rámečky), vrátí v `ui()` `"frame": "/mod/<id>/"`: okno pak
+ukáže jeho stránku v iframe s průhledným pozadím a data si stránka bere přes `http_get(path, query)`
+(`GET /mod/<id>/…`, vlákno serveru, umí i MJPEG stream). `"show"` (počítadlo) = požádat plochu o otevření
+nebo přenesení okna dopředu (z Domova, z menu brýlí).
 
 **Domov (`home`)** je overlay menu dlaždic v brýlích: dlaždice ukotvené v prostoru podle IMU (yaw z gyra,
 pitch z gravitace), výběr zaměřovačem uprostřed pohledu. Když je otevřený, drží vstup (`captures_input`):
@@ -121,7 +125,9 @@ krátký stisk tlačítka a gesta jdou jemu, myš hlavou se pozastaví, podržen
 Moduly do něj přidávají dlaždice přes `home_tiles()`.
 
 **Hotové moduly v tomto kroku:** `head_mouse` (engine Head Mouse 2.0 krmený daty z kořene),
-`clock` (čas a baterie v rohu, ukázka vrstvy), `voice` (kořen mluví přes Windows hlas, vypnutý).
+`clock` (čas a baterie v rohu, ukázka vrstvy), `voice` (kořen mluví přes Windows hlas, vypnutý),
+`keyboard` (vlastní klávesnice na obrazovce), `home` (Domov), `faces` (Tváře, první modul s vlastní
+stránkou: kamera, detekce, fronta trénování, databáze osob, rozpoznání a osobní karta, logika v `koren/faces/`).
 
 **Další moduly podle hotových řešení (návrh pořadí):**
 

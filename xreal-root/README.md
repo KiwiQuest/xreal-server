@@ -86,6 +86,36 @@ Klávesnice Windows (osk.exe) běží s ochranou UIAccess: klik z myši hlavou n
 neumí ani zavřít. Proto má kořen vlastní (`keyboard`): nebere fokus, píše do aktivního okna včetně
 české diakritiky a zavírá se klávesou ✕. Otevřeš ji v Domově nebo v menu.
 
+## Tváře (modul `faces`)
+
+Doma pozná lidi kolem tebe. Okno **Tváře** (Domov → Tváře, menu brýlí → „Tváře: okno s kamerou“, nebo karta
+Tváře v panelu → Otevřít okno) ukazuje živé video z kamery a rámečky kolem tváří:
+
+1. **Uložit:** klikni (myší hlavou, pohledem nebo tlačítkem brýlí) na rámeček neznámé tváře, nebo velké
+   **+ ULOŽIT TVÁŘ** (vezme největší tvář v záběru). Pár sekund se sbírá 8 různých ostrých snímků.
+2. **Fronta trénování:** uložená tvář jde do fronty (tlačítko FRONTA). Trénink spočítá otisky, zkontroluje,
+   jestli se nepodobá někomu v databázi (pak se zeptá „Je to X?“: kývni = ano, zavrť = ne, nebo tlačítka ve
+   frontě), a založí osobu „Osoba N“ v databázi.
+3. **Popis:** hned potom se otevře **osobní karta**: jméno a popis (pole + klávesnice na obrazovce), vztah
+   jedním klikem (rodina, přítel, kolega, soused, návštěva, jiné), kdy byl poprvé a naposledy viděn, návštěvy.
+4. **Rozpoznání:** od té chvíle se nad člověkem živě ukazuje jméno a vztah. Klik na rámeček = osobní karta
+   přes živé video, zavírá se tlačítkem nebo **zavrtěním hlavou**. **JEN POPISKY** skryje video (černá = v
+   brýlích průhledná), zůstanou jen jména (zatím bez kalibrace kamera → displej, takže přibližně).
+
+Bez okna: menu brýlí → „Tváře: uložit tvář před sebou“ / „Tváře: kdo je přede mnou“ (kamera se zapne sama
+na dobu potřebnou k akci). Jistě poznané tváře si samy přidávají nové snímky (jiné úhly a světlo), nejvýš
+jeden za 90 s na osobu.
+
+Kamera: XREAL Eye po zapnutí (Domov → Kamera Eye) nebo jiná webkamera. Vybírá se sama (přeskočí šedé SLAM / IR
+a zakryté), **KAMERA ⟳** zkusí další. Běží jen když je okno otevřené (nebo při ukládání), po 20 s bez okna se vypne.
+Poprvé `tvare_install.bat` (OpenCV, numpy, cryptography, modely YuNet + SFace do `models/faces`).
+
+**Data:** jen otisky (128 čísel) a malý výřez tváře pro kartu, šifrovaně (AES-256-GCM, klíč chráněný Windows
+DPAPI) v `data/faces/people.vault`, mimo git. Smazání osoby v kartě ji odstraní i se snímky. Používej to jen doma
+na lidech, kteří o tom vědí a souhlasí (podrobně o biometrii a GDPR: `ariel/docs/tvare.md`).
+Nastavení v `koren_config.json` → `"faces"`: `camera` (číslo kamery), `threshold` (0,363), `maybe` (0,30),
+`idle_off_s` (20), `cam_w`/`cam_h` (1280×720).
+
 ## Jak se chová víko
 
 | Situace | Co kořen udělá |
@@ -120,6 +150,8 @@ V systray (pravé tlačítko): stav, ruční **Režim bez rukou** (stolní PC, J
 | `koren/overlay.py` | průhledné vrstvy přes brýle |
 | `koren/glasses.py` | jediné spojení s brýlemi (IMU, tlačítko, přítomnost na USB) |
 | `koren/win.py` | systray, víko, hibernace, USB, fyzický vstup (ctypes) |
-| `koren/modules/` | moduly: `home` (Domov v brýlích), `keyboard`, `head_mouse`, `clock`, `voice` |
+| `koren/modules/` | moduly: `home` (Domov v brýlích), `keyboard`, `head_mouse`, `clock`, `voice`, `faces` (+ `faces_view.html`) |
+| `koren/faces/` | Tváře: kamera, detekce a otisk (YuNet + SFace), sledování a rozpoznání, šifrovaná databáze osob a fronta |
+| `tvare_install.bat`, `models/faces/` | instalace knihoven a modelů pro Tváře (modely nejsou v gitu) |
 | `tests/` | testy čisté logiky |
 | `koren_config.json`, `logs/` | vznikají za běhu, nejsou v gitu |

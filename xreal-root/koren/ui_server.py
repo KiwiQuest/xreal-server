@@ -5,6 +5,8 @@
   GET  /events      Server-Sent Events: stav ~2x za sekundu (prohlížeč se sám znovu připojí)
   POST /cmd         {"module": "...", "action": "..."} -> fronta hlavního vlákna kořene
   GET/POST /layout  rozložení oken plochy (koren_ui_layout.json)
+  GET  /mod/<id>/…  obsah modulu (`Module.http_get`, běží ve vlákně serveru): stránka okna modulu
+                    (iframe na ploše), data pro ni, MJPEG video
 
 Stav skládá hlavní vlákno kořene a jen ho sem vloží (`publish`), server ho pouze čte.
 """
@@ -23,8 +25,9 @@ TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=u
 
 
 class UiServer:
-    def __init__(self, post, port: int = 8790, log=print):
+    def __init__(self, post, port: int = 8790, log=print, mod_http=None):
         self.post, self.port, self.log = post, port, log
+        self.mod_http = mod_http             # (id, cesta, dotaz) -> odpověď modulu nebo None
         self._state = b"{}"
         self._ver = 0
         self._cond = threading.Condition()
@@ -90,6 +93,8 @@ def _handler(srv: UiServer):
                 return self._send(200, srv._state)
             if path == "/events":
                 return self._events()
+            if path.startswith("/mod/"):
+                return self._mod(path)
             if path == "/layout":
                 try:
                     with open(LAYOUT_FILE, "rb") as f:
@@ -102,6 +107,48 @@ def _handler(srv: UiServer):
                 return self._send(404, b"not found", "text/plain")
             with open(full, "rb") as f:
                 self._send(200, f.read(), TYPES.get(os.path.splitext(full)[1], "application/octet-stream"))
+
+        def _mod(self, path):
+            """Odpověď modulu: None (404), (typ, bajty), nebo ("stream", typ, generátor bajtů)
+            pro MJPEG (multipart/x-mixed-replace)."""
+            from urllib.parse import parse_qs, urlsplit
+            parts = path.split("/", 3)
+            mid, rest = parts[2], (parts[3] if len(parts) > 3 else "")
+            query = {k: v[-1] for k, v in parse_qs(urlsplit(self.path).query).items()}
+            try:
+                r = srv.mod_http(mid, rest, query) if srv.mod_http else None
+            except Exception as e:
+                srv.log(f"[UI] /mod/{mid}/{rest}: {type(e).__name__}: {e}")
+                return self._send(500, b"{}")
+            if r is None:
+                return self._send(404, b"not found", "text/plain")
+            if r[0] == "stream":
+                return self._stream(r[1], r[2])
+            ctype, body = r
+            if isinstance(body, (dict, list)):
+                body = json.dumps(body, ensure_ascii=False).encode("utf-8")
+            elif isinstance(body, str):
+                body = body.encode("utf-8")
+            self._send(200, body, ctype)
+
+        def _stream(self, ctype, gen):
+            self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            try:
+                for part in gen:
+                    head = b"--frame\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n" % (ctype.encode(), len(part))
+                    self.wfile.write(head + part + b"\r\n")
+                    self.wfile.flush()
+            except (OSError, ValueError):
+                pass                                  # prohlížeč zavřel spojení
+            except Exception as e:
+                srv.log(f"[UI] stream modulu: {type(e).__name__}: {e}")
+            finally:
+                close = getattr(gen, "close", None)
+                if close:
+                    close()
 
         def _events(self):
             self.send_response(200)

@@ -30,7 +30,7 @@ from .ui_window import UiWindow
 from .states import BAG, DESK, MODE_LABELS, SUSPEND, WAITING, Machine
 
 TICK_MS = 30          # první tik; dál podle režimu (profiles.Plan.tick_ms)
-ALL_MODULES = ("home", "keyboard", "head_mouse", "clock", "voice")
+ALL_MODULES = ("home", "keyboard", "head_mouse", "clock", "voice", "faces")
 TRAY_ICON = {DESK: "desk", BAG: "bag", WAITING: "wait", SUSPEND: "wait"}
 BEEPS = {"bag": ((880, 110), (1320, 150)), "wait": ((660, 220),), "warn": ((520, 140), (520, 140)),
          "lost": ((440, 260),)}
@@ -103,7 +103,7 @@ class App:
         self.head_forced = False            # ovládání hlavou zapnuté ručně v režimech 1-3
         self._screen_off = False
         self.settings = SettingsWindow(self)
-        self.ui_server = UiServer(self.q.put, log=self.log)
+        self.ui_server = UiServer(self.q.put, log=self.log, mod_http=self._mod_http)
         self.ui_win = UiWindow(log=self.log)
         self._t_ui = 0.0
         self._t_gui = 0.0
@@ -636,7 +636,8 @@ class App:
             mods.append({"id": mid, "name": mod.name, "description": mod.description, "active": mod.active,
                          "enabled": bool(self.cfg.modules.get(mid)), "status": st if isinstance(st, str) else "",
                          "window": bool(u.get("window", True)), "control": bool(u.get("control", False)),
-                         "lines": u.get("lines", []), "actions": u.get("actions", [])})
+                         "lines": u.get("lines", []), "actions": u.get("actions", []),
+                         "frame": u.get("frame", ""), "show": u.get("show", 0)})
         lid = {"open": "otevřené", "closed": "zavřené"}.get(s.lid, "bez víka / neznámé")
         ctl = {"full": "klávesnice a myš", "head": "hlava a tlačítko brýlí", "button": "jen tlačítko brýlí",
                "none": "žádné"}.get(c.level, c.level)
@@ -675,6 +676,14 @@ class App:
             "modules": mods, "root_lines": [g.title + ": " + g.text], "root_actions": root_actions,
             "log": list(self.log.tail), "ticker": tick,
         }
+
+    def _mod_http(self, mid: str, path: str, query: dict):
+        """Obsah modulu pro plochu (vlákno serveru). Chyba modulu se počítá jako jiné chyby modulu."""
+        mod = self.mods.get(mid)
+        if mod is None:
+            return None
+        r = self.mods.call(mod, "http_get", path, query)
+        return None if r is _FAIL else r
 
     def _ui_cmd(self, module: str, action: str, value):
         self.log(f"[UI] {module}.{action}{'' if value is None else ' ' + str(value)}")

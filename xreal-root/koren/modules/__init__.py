@@ -84,6 +84,12 @@ class Module:
     def on_press(self, t: float):
         """Krátký stisk tlačítka brýlí, když modul drží vstup (captures_input)."""
 
+    def http_get(self, path: str, query: dict):
+        """GET /mod/<id>/<path> z kořenové plochy. Běží ve VLÁKNĚ SERVERU (ne v Tk): jen číst
+        připravená data. Vrací None (404), (typ, bajty | str | dict) nebo ("stream", typ, generátor)
+        pro MJPEG. Okno modulu jako vlastní stránka: v `ui()` vrať "frame": "/mod/<id>/"."""
+        return None
+
 
 class ModuleContext:
     """Co kořen modulu půjčuje: vrstvy overlay, hlášky, nastavení, stav."""
