@@ -102,6 +102,26 @@ class HeadMouse(Module):
             return "vypnutá"
         return "zapnutá" + (" (pozastavená)" if self.paused else "")
 
+    def ui(self):
+        return {"window": True, "control": True,
+                "lines": [f"Režim: {self.mcfg.mode}", f"Citlivost: {self.mcfg.sens:.0f}",
+                          "Klik pohledem: " + ("zapnutý" if self.mcfg.dwell_on else "vypnutý"),
+                          f"Rychlost hlavy: {self.rt.speed:.0f} °/s"],
+                "actions": [{"id": "toggle", "label": "Myš hlavou", "on": self.rt.enabled},
+                            {"id": "dwell", "label": "Klik pohledem", "on": self.mcfg.dwell_on},
+                            {"id": "recenter", "label": "Vycentrovat"},
+                            {"id": "calib", "label": "Kalibrovat"}]}
+
+    def ui_action(self, action, value=None):
+        if action == "toggle":
+            self.ctx.app().set_head_mouse(not self.rt.enabled)
+        elif action == "dwell":
+            self._toggle_dwell()
+        elif action == "recenter":
+            self._recenter()
+        elif action == "calib":
+            self.recalibrate()
+
     def menu_items(self):
         r = self.rt
         return [

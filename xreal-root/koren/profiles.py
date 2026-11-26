@@ -44,6 +44,7 @@ class Plan:
     gui: bool              # okno nastavení trvale viditelné
     laptop_screen_off: bool
     tick_ms: int
+    ui: bool = False       # kořenová plocha (webová, ve stylu yolo.html) přes celé brýle
 
 
 def plan(eff: str, mode: str) -> Plan:
@@ -51,9 +52,9 @@ def plan(eff: str, mode: str) -> Plan:
     if mode == SUSPEND:
         return Plan(False, False, True, False, False, 250)
     if mode in (BAG, WAITING):           # víko zavřené (nebo ruční režim bez rukou): běží vše
-        return Plan(True, True, True, False, False, 30)
+        return Plan(True, True, True, False, False, 30, ui=mode == BAG)
     if eff == GLASSES:
-        return Plan(True, True, True, False, True, 30)
+        return Plan(True, True, True, False, True, 30, ui=True)
     if eff == MONITOR:
         return Plan(True, False, False, True, False, 100)
     return Plan(False, False, False, False, False, 250)

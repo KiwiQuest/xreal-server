@@ -99,10 +99,18 @@ class Home(Module):
         return self.open
 
     def on_mode(self, prev, mode):
-        if mode == "BAG":
-            self.show()
-        elif mode in ("DESK", "SUSPEND"):
+        # Domov je overlay menu: otevírá se z menu (podržet tlačítko) nebo z plochy, ne sám
+        if mode in ("DESK", "SUSPEND"):
             self.close()
+
+    def ui(self):
+        return {"window": False, "control": True,
+                "lines": ["Dlaždice kolem hlavy, výběr pohledem.", "Otevřený" if self.open else "Zavřený"],
+                "actions": [{"id": "toggle", "label": "Zavřít Domov" if self.open else "Otevřít Domov"}]}
+
+    def ui_action(self, action, value=None):
+        if action == "toggle":
+            self.close() if self.open else self.show()
 
     def show(self):
         if self.open:

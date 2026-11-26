@@ -24,6 +24,9 @@ from .modules import _FAIL, Module, ModuleContext, ModuleManager
 from . import displays
 from .overlay import Overlay
 from .settings import SettingsWindow
+from . import sysinfo
+from .ui_server import UiServer
+from .ui_window import UiWindow
 from .states import BAG, DESK, MODE_LABELS, SUSPEND, WAITING, Machine
 
 TICK_MS = 30          # první tik; dál podle režimu (profiles.Plan.tick_ms)
@@ -35,12 +38,15 @@ BEEPS = {"bag": ((880, 110), (1320, 150)), "wait": ((660, 220),), "warn": ((520,
 
 class Log:
     def __init__(self, path: str, max_bytes: int = 2_000_000):
+        from collections import deque
         self.path, self.max = path, max_bytes
+        self.tail = deque(maxlen=60)               # posledních pár řádků pro plochu
         self.lock = threading.Lock()
         os.makedirs(os.path.dirname(path), exist_ok=True)
 
     def __call__(self, text: str):
         line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {text}\n"
+        self.tail.append(line.rstrip()[11:])
         with self.lock:
             try:
                 if os.path.exists(self.path) and os.path.getsize(self.path) > self.max:
@@ -97,6 +103,9 @@ class App:
         self.head_forced = False            # ovládání hlavou zapnuté ručně v režimech 1-3
         self._screen_off = False
         self.settings = SettingsWindow(self)
+        self.ui_server = UiServer(self.q.put, log=self.log)
+        self.ui_win = UiWindow(log=self.log)
+        self._t_ui = 0.0
         self._t_gui = 0.0
 
     # ================================================================ start / stop
@@ -106,6 +115,7 @@ class App:
                  f"dry: {self.cfg.dry_run}")
         self.native.start()
         self.native.ready.wait(3.0)
+        self.ui_server.start()
         self.mods.load(ALL_MODULES)            # načíst; spustí je až plán podle režimu
         self.glasses.sinks.append(self._imu_to_modules)
         self.glasses.start()
@@ -125,6 +135,7 @@ class App:
         self.running = False
         self.log("[KOREN] konec")
         self._laptop_screen(False)
+        self.ui_win.close()
         self.mods.stop_all()
         self.glasses.stop()
         self.native.close()
@@ -220,6 +231,9 @@ class App:
         if now - self._t_gui > 1.0:
             self._t_gui = now
             self.settings.refresh()
+        if self.plan.ui and now - self._t_ui > 0.5:
+            self._t_ui = now
+            self.ui_server.publish(self.ui_state())
 
     # =================================================================== události
     def _event(self, ev: tuple, now: float):
@@ -262,6 +276,8 @@ class App:
         elif kind == "tray_open":
             self.overlay.t_change = now           # ukázat celou nápovědu znovu
             self.settings.show()
+        elif kind == "ui_cmd":
+            self._ui_cmd(ev[1], ev[2], ev[3] if len(ev) > 3 else None)
         elif kind == "hotkey":
             self.log("[KOREN] Ctrl+Alt+T: režim Tray")
             self.set_profile(profiles.TRAY)
@@ -516,6 +532,10 @@ class App:
             self.settings.pinned = False
             self.settings.hide()
         self._laptop_screen(pl.laptop_screen_off)
+        if pl.ui:
+            self.ui_win.show(self.ui_server.url, self.gdisp or self._fallback_display(), self.cfg.dry_run)
+        else:
+            self.ui_win.close()
 
     def _second_monitor(self):
         """Druhý monitor pro okno nastavení: brýle, jinak jiný než hlavní, jinak hlavní."""
@@ -539,8 +559,12 @@ class App:
             self.log(f"[DISP] brýle: {g['label'] if g else 'nenalezeny'} ({'potvrzeno' if ok else 'odhad'})")
         if ok != self.gconfirmed:
             self._plan_key = None                       # po potvrzení znovu zkusit zhasnout notebook
+        moved = (g or {}).get("x"), (g or {}).get("y"), (g or {}).get("w")
         self.gdisp, self.gconfirmed = g, ok
         self.overlay.set_monitor(g or self._fallback_display())
+        if self.plan.ui and moved != getattr(self, "_ui_mon", None):
+            self._ui_mon = moved
+            self.ui_win.place(g or self._fallback_display())
         # nepotvrzený monitor: jednou nabídnout potvrzení, ale jen když má uživatel ruce (víko otevřené)
         need = not ok and self.glasses.usb and len(self.displays) > 0
         if need and not self._asked_display and self.machine.mode == DESK and self.machine.facts.lid != "closed":
@@ -592,6 +616,90 @@ class App:
             if topo != win.TOPO_EXTERNAL:
                 win.set_display_topology(topo, self.log)
                 self.log(f"[DISP] displej notebooku vrácen ({topo})")
+
+    # ============================================================ kořenová plocha
+    def ui_state(self) -> dict:
+        s = self.snapshot()
+        c = capabilities(s, self.cfg.physical_input_fresh_s)
+        g = guidance(s, c, self.struggle.level(time.monotonic()), self.machine.wait_s)
+        sysd = sysinfo.snapshot()
+        head = self.glasses.head()
+        icon = {BAG: ("◎", ""), DESK: ("◉", ""), WAITING: ("⏳", "warn"), SUSPEND: ("☾", "off")}
+        glyph, level = icon.get(s.mode, ("◉", ""))
+        if g.warnings and not level:
+            level = "warn"
+        mods = []
+        for mid, mod in self.mods.mods.items():
+            u = self.mods.call(mod, "ui") if mod.active else {}
+            u = u if isinstance(u, dict) else {}
+            st = self.mods.call(mod, "status") if mod.active else ""
+            mods.append({"id": mid, "name": mod.name, "description": mod.description, "active": mod.active,
+                         "enabled": bool(self.cfg.modules.get(mid)), "status": st if isinstance(st, str) else "",
+                         "window": bool(u.get("window", True)), "control": bool(u.get("control", False)),
+                         "lines": u.get("lines", []), "actions": u.get("actions", [])})
+        lid = {"open": "otevřené", "closed": "zavřené"}.get(s.lid, "bez víka / neznámé")
+        ctl = {"full": "klávesnice a myš", "head": "hlava a tlačítko brýlí", "button": "jen tlačítko brýlí",
+               "none": "žádné"}.get(c.level, c.level)
+        prof = profiles.SHORT[self.profile_eff]
+        bat = sysd.get("bat")
+        tick = {
+            "Systém": [f"CPU {sysd['cpu']} %" if sysd.get("cpu") is not None else "CPU …",
+                       f"Paměť {sysd['mem']['pct']} % ({sysd['mem']['used']} z {sysd['mem']['total']} GB)" if sysd.get("mem") else "",
+                       (f"Baterie {bat['pct']} %" + (", nabíjí se" if bat["ac"] else "")) if bat else ""],
+            "Brýle": [("Brýle připojené" if s.glasses_usb else "Brýle nepřipojené")
+                      + (f", pohyb {self.glasses.ori.hz:.0f} Hz" if s.imu_alive else ""),
+                      f"Monitor brýlí: {self.gdisp['label']}" if self.gdisp else "Monitor brýlí nenalezen"],
+            "Moduly": [f"{m['name']}: {m['status'] or ('běží' if m['active'] else 'vypnutý')}" for m in mods],
+            "Čas": [("pondělí", "úterý", "středa", "čtvrtek", "pátek", "sobota", "neděle")[time.localtime().tm_wday]
+                    + time.strftime(" %d. %m. %Y, %H:%M")],
+            "Info": [g.text] + [f"{a} → {b}" for a, b in g.options[:3]] +
+                    ["Podrž tlačítko brýlí 2 s = menu a Domov", "Ctrl+Alt+T = kdykoliv režim Tray"],
+        }
+        tick = {k: [x for x in v if x] for k, v in tick.items()}
+        root_actions = [{"id": f"profile_{p}", "label": profiles.SHORT[p], "on": self.cfg.profile == p}
+                        for p in profiles.PROFILES]
+        root_actions += [{"id": "home", "label": "Domov (menu dlaždic)"},
+                         {"id": "recalibrate", "label": "Kalibrovat brýle"},
+                         {"id": "settings", "label": "Nastavení"},
+                         {"id": "hibernate", "label": "Hibernovat…"}]
+        return {
+            "t": time.time(), "mode": s.mode, "mode_label": MODE_LABELS[s.mode] + (" · víko zavřené" if s.lid == "closed" else ""),
+            "profile": self.cfg.profile, "profile_label": f"režim {profiles.LABELS[self.cfg.profile]}" +
+            (f" → {prof}" if self.cfg.profile == profiles.AUTO else ""),
+            "icon": {"glyph": glyph, "level": level}, "lid_label": lid, "control_label": ctl, "dry": self.cfg.dry_run,
+            "glasses": {"usb": s.glasses_usb, "imu": s.imu_alive, "btn": s.button_alive,
+                        "streams": self.glasses.streams.is_set(), "hz": self.glasses.ori.hz if s.imu_alive else 0,
+                        "display": self.gdisp["label"] if self.gdisp else "", "confirmed": self.gconfirmed,
+                        "head": list(head) if head else None},
+            "sys": sysd, "warnings": g.warnings, "guidance": {"title": g.title, "text": g.text},
+            "modules": mods, "root_lines": [g.title + ": " + g.text], "root_actions": root_actions,
+            "log": list(self.log.tail), "ticker": tick,
+        }
+
+    def _ui_cmd(self, module: str, action: str, value):
+        self.log(f"[UI] {module}.{action}{'' if value is None else ' ' + str(value)}")
+        self._t_input = time.monotonic()
+        if module == "root":
+            if action.startswith("profile_"):
+                self.set_profile(action[8:])
+            elif action == "home":
+                h = self.mods.get("home")
+                if h is not None:
+                    self.mods.call(h, "show")
+            elif action == "recalibrate":
+                self.recalibrate()
+            elif action == "settings":
+                self.settings.show()
+            elif action == "hibernate":
+                self.ask("Opravdu hibernovat notebook?", on_yes=lambda: self.q.put(("hibernate_now",)))
+            elif action == "module_toggle" and value in self.mods.mods:
+                self.cfg.modules[value] = not self.cfg.modules.get(value, False)
+                self.cfg.save()
+                self._plan_key = None
+            return
+        mod = self.mods.get(module)
+        if mod is not None:
+            self.mods.call(mod, "ui_action", action, value)
 
     # ================================================================== stav
     def snapshot(self) -> Snapshot:

@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<title>XREAL Kořen – plocha</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  /* černá = v brýlích průhledná: plocha visí v prostoru, okolí je vidět */
+  html, body { width:100%; height:100%; background:#000; color:#00ff80; overflow:hidden;
+    font-family:'Courier New',monospace; user-select:none; }
+  button { font:13px 'Courier New',monospace; color:#00ff80; background:#062a17; border:1px solid #1a6a40;
+    padding:4px 10px; border-radius:3px; cursor:pointer; }
+  button:hover { border-color:#00ff80; background:#0d4a2a; }
+  button.on { background:#00ff80; color:#000; }
+  button.warn { color:#ffd200; border-color:#806a10; }
+  .info { font-size:12px; color:#2fa86a; }
+  .err, .warnt { color:#ffd200; }
+
+  /* ── stavový řádek ── */
+  #top { position:absolute; left:0; right:0; top:0; height:56px; display:flex; align-items:center; gap:14px;
+    padding:0 14px; border-bottom:1px solid #0d5a33; background:rgba(0,20,10,0.55); }
+  #icon { width:42px; height:42px; border-radius:50%; border:2px solid #00ff80; display:flex; align-items:center;
+    justify-content:center; font-size:22px; flex:none; }
+  #icon.warn { border-color:#ffd200; color:#ffd200; }
+  #icon.off { border-color:#1a6a40; color:#1a6a40; }
+  #modebox { flex:none; min-width:190px; }
+  #mode { font-size:16px; letter-spacing:1px; }
+  #profile { font-size:12px; color:#2fa86a; }
+  #ticker { flex:1; overflow:hidden; white-space:nowrap; font-size:16px; color:#c8ffe0; display:flex; gap:10px;
+    align-items:center; min-width:0; }
+  #tk-topic { flex:none; font-size:12px; color:#000; background:#00ff80; padding:2px 8px; border-radius:3px; }
+  #tk-msg { overflow:hidden; text-overflow:ellipsis; transition:opacity .4s; }
+  #topics { flex:none; display:flex; gap:4px; }
+  #topics button { padding:2px 6px; font-size:11px; }
+  #clock { flex:none; font-size:20px; text-align:right; min-width:120px; }
+  #clock small { display:block; font-size:12px; color:#2fa86a; }
+
+  /* ── plocha modulů (okna 1..N) ── */
+  #desk { position:absolute; left:0; top:56px; bottom:0; right:340px; }
+  .win { position:absolute; display:flex; flex-direction:column; min-width:220px; min-height:120px;
+    border:1px solid #0d5a33; background:rgba(0,10,5,0.55); border-radius:4px; }
+  .win.active { border-color:#00ff80; }
+  .bar { flex:0 0 30px; display:flex; align-items:center; gap:6px; padding:0 6px; cursor:move;
+    background:rgba(0,40,20,0.85); border-bottom:1px solid #0d5a33; }
+  .bar .title { font-size:13px; letter-spacing:1px; color:#3fdc8c; white-space:nowrap; overflow:hidden; }
+  .bar .sp { flex:1; }
+  .bar button { padding:1px 0; width:26px; font-size:13px; }
+  .body { position:relative; flex:1; overflow:auto; padding:8px 10px; font-size:14px; color:#c8ffe0; }
+  .grip { position:absolute; right:0; bottom:0; width:18px; height:18px; cursor:nwse-resize;
+    background:linear-gradient(135deg, transparent 55%, #1a8a50 55%, #1a8a50 65%, transparent 65%,
+      transparent 75%, #1a8a50 75%, #1a8a50 85%, transparent 85%); }
+  .win.max { left:4px !important; top:4px !important; width:calc(100% - 8px) !important;
+    height:calc(100% - 8px) !important; z-index:9000 !important; }
+  .win.min { display:none !important; }
+  .kv { display:flex; justify-content:space-between; gap:10px; padding:2px 0; border-bottom:1px solid rgba(13,90,51,0.25); }
+  .kv b { font-weight:normal; color:#2fa86a; }
+  .meter { height:8px; background:#062a17; border:1px solid #0d5a33; margin:2px 0 8px; }
+  .meter div { height:100%; background:#00ff80; }
+  .lines div { padding:1px 0; }
+  .acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  #log { font-size:12px; color:#8fd8b0; white-space:pre-wrap; }
+  #headcv { width:100%; height:120px; display:block; }
+
+  #deskbar { position:absolute; left:8px; bottom:8px; display:flex; gap:6px; z-index:9500; align-items:center; }
+  #dock { display:flex; gap:6px; }
+  #srcsel { font:13px 'Courier New',monospace; color:#00ff80; background:#062a17; border:1px solid #1a6a40; padding:3px; }
+
+  /* ── panel control modulů (nepřekrývají se) ── */
+  #ctl { position:absolute; right:0; top:56px; bottom:0; width:340px; border-left:1px solid #0d5a33;
+    overflow-y:auto; padding:8px; background:rgba(0,12,6,0.45); }
+  .card { border:1px solid #0d5a33; border-radius:4px; margin-bottom:8px; background:rgba(0,10,5,0.55); }
+  .card.active { border-color:#00ff80; }
+  .card h3 { font-size:14px; font-weight:normal; letter-spacing:1px; padding:6px 8px; cursor:pointer;
+    display:flex; justify-content:space-between; gap:6px; background:rgba(0,40,20,0.6); }
+  .card h3 span.st { color:#2fa86a; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .card .cbody { padding:6px 8px 8px; font-size:13px; color:#c8ffe0; display:none; }
+  .card.active .cbody { display:block; }
+  #warns { margin-bottom:8px; }
+  #warns div { font-size:12px; color:#ffd200; border:1px solid #806a10; padding:4px 6px; margin-bottom:4px; border-radius:3px; }
+  #conn { position:absolute; left:50%; top:40%; transform:translateX(-50%); color:#ffd200; font-size:18px; display:none; }
+</style>
+</head>
+<body>
+
+<div id="top">
+  <div id="icon" title="hlavní stav">◉</div>
+  <div id="modebox"><div id="mode">…</div><div id="profile"></div></div>
+  <div id="ticker"><span id="tk-topic">…</span><span id="tk-msg"></span></div>
+  <div id="topics"></div>
+  <div id="clock">--:--<small></small></div>
+</div>
+
+<div id="desk"></div>
+<div id="deskbar">
+  <div id="dock"></div>
+  <select id="srcsel" title="obsah nového okna"></select>
+  <button id="b-add">+ OKNO</button>
+  <button id="b-tile" title="okna vedle sebe">VEDLE SEBE</button>
+  <button id="b-cascade" title="okna přes sebe">PŘES SEBE</button>
+  <button id="b-zm" title="menší písmo">A−</button>
+  <button id="b-zp" title="větší písmo">A+</button>
+  <button id="b-save">ULOŽIT</button>
+</div>
+
+<div id="ctl"><div id="warns"></div><div id="cards"></div></div>
+<div id="conn">spojení s kořenem se obnovuje…</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let S = {}, z = 10, activeCard = 'root', layout = { wins: [], topics: null };
+const post = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Koren': '1' },
+  body: JSON.stringify(body || {}) });
+const cmd = (module, action, value) => post('/cmd', { module, action, value });
+// innerHTML jen při změně: překreslení 2x za sekundu by jinak rušilo rozkliknutá tlačítka
+const setHtml = (el, h) => { if (el._h !== h) { el.innerHTML = h; el._h = h; } };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ── zdroje obsahu oken: vestavěné + moduly ──────────────────────────────────
+const BUILTIN = {
+  sys:     { title: 'SYSTÉM',  render: renderSys },
+  glasses: { title: 'BRÝLE',   render: renderGlasses },
+  log:     { title: 'LOG',     render: renderLog },
+  modules: { title: 'MODULY',  render: renderModules },
+};
+function sources() {
+  const out = Object.entries(BUILTIN).map(([id, b]) => ({ id, title: b.title }));
+  for (const m of S.modules || []) if (m.window) out.push({ id: 'mod:' + m.id, title: m.name.toUpperCase() });
+  return out;
+}
+function renderSource(src, body) {
+  if (BUILTIN[src]) return BUILTIN[src].render(body);
+  const m = (S.modules || []).find(m => 'mod:' + m.id === src);
+  if (!m) { setHtml(body, '<div class="info">modul neběží</div>'); return; }
+  setHtml(body, moduleHtml(m, 'win'));
+}
+function moduleHtml(m, where) {
+  const lines = (m.lines || []).map(l => `<div>${esc(l)}</div>`).join('');
+  const acts = (m.actions || []).map(a =>
+    `<button class="${a.on ? 'on' : ''}" onclick="cmd('${m.id}','${a.id}')">${esc(a.label)}</button>`).join('');
+  return `<div class="lines">${lines || '<div class="info">' + esc(m.status || m.description || '') + '</div>'}</div>`
+    + (acts ? `<div class="acts">${acts}</div>` : '');
+}
+function kv(k, v, cls = '') { return `<div class="kv"><b>${esc(k)}</b><span class="${cls}">${esc(v)}</span></div>`; }
+function meter(p) { return `<div class="meter"><div style="width:${Math.max(0, Math.min(100, p || 0))}%"></div></div>`; }
+function renderSys(b) {
+  const s = S.sys || {};
+  const up = s.uptime ? `${Math.floor(s.uptime / 3600)} h ${Math.floor(s.uptime / 60) % 60} min` : '-';
+  setHtml(b, kv('CPU', s.cpu != null ? s.cpu + ' %' : '-') + meter(s.cpu)
+    + kv('Paměť', s.mem ? `${s.mem.pct} %  (${s.mem.used} / ${s.mem.total} GB)` : '-') + meter(s.mem && s.mem.pct)
+    + kv('Baterie', s.bat ? `${s.bat.pct} %${s.bat.ac ? ' · nabíjí' : ''}` : 'bez baterie',
+         s.bat && s.bat.pct <= 15 && !s.bat.ac ? 'warnt' : '') + meter(s.bat && s.bat.pct)
+    + kv('Běží', up) + kv('Víko', S.lid_label || '-') + kv('Ovládání', S.control_label || '-'));
+}
+function renderGlasses(b) {
+  const g = S.glasses || {};
+  setHtml(b, kv('USB', g.usb ? 'připojeno' : 'ne', g.usb ? '' : 'warnt')
+    + kv('Pohyb (IMU)', g.imu ? `OK ${g.hz ? Math.round(g.hz) + ' Hz' : ''}` : (g.streams ? 'nepřichází' : 'vypnuto'))
+    + kv('Tlačítko', g.btn ? 'OK' : (g.streams ? 'nepřipojeno' : 'vypnuto'))
+    + kv('Displej', g.display || 'nenalezen', g.confirmed ? '' : 'warnt')
+    + `<canvas id="headcv"></canvas>`);
+  const cv = b.querySelector('#headcv');
+  if (!cv) return;
+  cv.width = cv.clientWidth; cv.height = 120;
+  const c = cv.getContext('2d'), W = cv.width, H = cv.height;
+  c.strokeStyle = '#0d5a33'; c.beginPath(); c.moveTo(W / 2, 0); c.lineTo(W / 2, H); c.moveTo(0, H / 2); c.lineTo(W, H / 2); c.stroke();
+  if (g.head) {
+    const x = W / 2 + Math.max(-1, Math.min(1, g.head[0] / 60)) * (W / 2 - 8);
+    const y = H / 2 - Math.max(-1, Math.min(1, g.head[1] / 40)) * (H / 2 - 8);
+    c.fillStyle = '#00ff80'; c.beginPath(); c.arc(x, y, 6, 0, 7); c.fill();
+    c.fillStyle = '#2fa86a'; c.font = '11px Courier New';
+    c.fillText(`yaw ${g.head[0].toFixed(0)}°  pitch ${g.head[1].toFixed(0)}°`, 6, H - 6);
+  } else { c.fillStyle = '#2fa86a'; c.font = '12px Courier New'; c.fillText('poloha hlavy není k dispozici', 6, H - 8); }
+}
+function renderLog(b) {
+  const atEnd = b.scrollTop + b.clientHeight >= b.scrollHeight - 10;
+  setHtml(b, `<div id="log">${esc((S.log || []).join('\n'))}</div>`);
+  if (atEnd) b.scrollTop = b.scrollHeight;
+}
+function renderModules(b) {
+  setHtml(b, (S.modules || []).map(m =>
+    `<div class="kv"><span>${esc(m.name)}</span><span>${m.active ? '<span>běží</span>' : '<span class="info">neběží</span>'}
+     <button style="margin-left:6px;padding:1px 6px" onclick="cmd('root','module_toggle','${m.id}')">${m.enabled ? 'vypnout' : 'zapnout'}</button></span></div>`).join(''));
+}
+
+// ── okna ────────────────────────────────────────────────────────────────────
+const wins = new Map();          // id -> {el, src, op}
+function mkWin(spec) {
+  const id = spec.id || ('w' + Date.now() + Math.floor(Math.random() * 1000));
+  const el = document.createElement('div');
+  el.className = 'win'; el.id = id;
+  el.innerHTML = `<div class="bar"><span class="title"></span><span class="sp"></span>
+    <button data-a="op" title="průhlednost">◐</button><button data-a="min" title="skrýt do lišty">_</button>
+    <button data-a="max" title="celá plocha">□</button><button data-a="close" title="zavřít">✕</button></div>
+    <div class="body"></div><div class="grip"></div>`;
+  $('desk').appendChild(el);
+  const w = { el, src: spec.src, op: spec.op || 1 };
+  wins.set(id, w);
+  Object.assign(el.style, { left: (spec.x ?? 20) + 'px', top: (spec.y ?? 20) + 'px', width: (spec.w ?? 420) + 'px',
+    height: (spec.h ?? 260) + 'px', opacity: w.op, zIndex: ++z });
+  el.classList.toggle('min', !!spec.min); el.classList.toggle('max', !!spec.max);
+  el.querySelector('.bar').addEventListener('click', e => {
+    const a = e.target.dataset && e.target.dataset.a; if (!a) return;
+    if (a === 'op') { w.op = w.op <= 0.4 ? 1 : +(w.op - 0.2).toFixed(1); el.style.opacity = w.op; }
+    if (a === 'min') { el.classList.add('min'); renderDock(); }
+    if (a === 'max') { el.classList.toggle('max'); el.style.zIndex = ++z; }
+    if (a === 'close') { el.remove(); wins.delete(id); renderDock(); }
+  });
+  el.querySelector('.bar').addEventListener('dblclick', () => { el.classList.toggle('max'); el.style.zIndex = ++z; });
+  el.addEventListener('mousedown', () => {
+    el.style.zIndex = ++z;
+    document.querySelectorAll('.win').forEach(x => x.classList.toggle('active', x === el));
+  });
+  drag(el); renderWin(w);
+  return w;
+}
+function drag(el) {
+  const bar = el.querySelector('.bar'), grip = el.querySelector('.grip'), desk = $('desk');
+  bar.addEventListener('mousedown', e => {
+    if (e.target.tagName === 'BUTTON' || el.classList.contains('max')) return;
+    const sx = e.clientX - el.offsetLeft, sy = e.clientY - el.offsetTop;
+    const mv = ev => { el.style.left = Math.max(0, Math.min(desk.clientWidth - 60, ev.clientX - sx)) + 'px';
+                       el.style.top = Math.max(0, Math.min(desk.clientHeight - 30, ev.clientY - sy)) + 'px'; };
+    const up = () => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); };
+    addEventListener('mousemove', mv); addEventListener('mouseup', up); e.preventDefault();
+  });
+  grip.addEventListener('mousedown', e => {
+    const sx = e.clientX, sy = e.clientY, w0 = el.offsetWidth, h0 = el.offsetHeight;
+    const mv = ev => { el.style.width = Math.max(220, w0 + ev.clientX - sx) + 'px';
+                       el.style.height = Math.max(120, h0 + ev.clientY - sy) + 'px'; };
+    const up = () => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); };
+    addEventListener('mousemove', mv); addEventListener('mouseup', up); e.preventDefault(); e.stopPropagation();
+  });
+}
+function title(src) { const s = sources().find(s => s.id === src); return s ? s.title : src; }
+function renderWin(w) {
+  w.el.querySelector('.title').textContent = title(w.src);
+  if (!w.el.classList.contains('min')) renderSource(w.src, w.el.querySelector('.body'));
+}
+function renderDock() {
+  const d = $('dock'); d.innerHTML = '';
+  for (const [, w] of wins) if (w.el.classList.contains('min')) {
+    const b = document.createElement('button'); b.textContent = '▴ ' + title(w.src);
+    b.onclick = () => { w.el.classList.remove('min'); w.el.style.zIndex = ++z; renderDock(); renderWin(w); };
+    d.appendChild(b);
+  }
+}
+function arrange(mode) {
+  const list = [...wins.values()].filter(w => !w.el.classList.contains('min'));
+  const D = $('desk'), W = D.clientWidth, H = D.clientHeight - 44, n = list.length || 1;
+  list.forEach((w, i) => {
+    w.el.classList.remove('max');
+    if (mode === 'tile') {
+      const cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols), cw = W / cols, ch = H / rows;
+      Object.assign(w.el.style, { left: (i % cols) * cw + 6 + 'px', top: Math.floor(i / cols) * ch + 6 + 'px',
+        width: cw - 12 + 'px', height: ch - 12 + 'px' });
+      w.op = 1;
+    } else {
+      Object.assign(w.el.style, { left: 30 + i * 40 + 'px', top: 20 + i * 36 + 'px',
+        width: W * 0.55 + 'px', height: H * 0.6 + 'px' });
+      w.op = i === n - 1 ? 1 : 0.6;                     // přes sebe: spodní okna průhledná
+    }
+    w.el.style.opacity = w.op; w.el.style.zIndex = ++z;
+  });
+}
+function current() {
+  return { topics: layout.topics, zoom: layout.zoom, wins: [...wins.entries()].map(([id, w]) => ({ id, src: w.src, op: w.op,
+    x: parseInt(w.el.style.left), y: parseInt(w.el.style.top), w: parseInt(w.el.style.width), h: parseInt(w.el.style.height),
+    min: w.el.classList.contains('min'), max: w.el.classList.contains('max') })) };
+}
+$('b-add').onclick = () => { const w = mkWin({ src: $('srcsel').value, x: 40 + wins.size * 30, y: 30 + wins.size * 30 }); renderWin(w); };
+$('b-tile').onclick = () => arrange('tile');
+$('b-cascade').onclick = () => arrange('cascade');
+$('b-save').onclick = () => post('/layout', current()).then(() => flash('rozložení uloženo'));
+function setZoom(zm) { layout.zoom = Math.max(0.8, Math.min(2, +zm.toFixed(2))); document.body.style.zoom = layout.zoom; }
+$('b-zm').onclick = () => setZoom((layout.zoom || 1.2) - 0.1);
+$('b-zp').onclick = () => setZoom((layout.zoom || 1.2) + 0.1);
+
+// ── panel control modulů ─────────────────────────────────────────────────────
+function renderCards() {
+  setHtml($('warns'), (S.warnings || []).map(w => `<div>⚠ ${esc(w)}</div>`).join(''));
+  const cards = [{ id: 'root', name: 'KOŘEN', status: S.profile_label, lines: S.root_lines, actions: S.root_actions }]
+    .concat((S.modules || []).filter(m => m.control && m.active));
+  setHtml($('cards'), cards.map(m => `<div class="card ${m.id === activeCard ? 'active' : ''}" data-id="${m.id}">
+      <h3><span>${esc(m.name)}</span><span class="st">${esc(m.status || '')}</span></h3>
+      <div class="cbody">${m.id === 'root' ? moduleHtml({ ...m, id: 'root' }) : moduleHtml(m)}</div></div>`).join(''));
+  for (const c of document.querySelectorAll('.card h3'))
+    c.onclick = () => { activeCard = c.parentElement.dataset.id; renderCards(); };
+}
+
+// ── stavový řádek a rotující zprávy ─────────────────────────────────────────
+let tkI = 0, tkLast = 0;
+function topicsOn() { return layout.topics || Object.keys(S.ticker || {}); }
+function renderTopics() {
+  const all = Object.keys(S.ticker || {}), on = topicsOn();
+  $('topics').innerHTML = all.map(t => `<button class="${on.includes(t) ? 'on' : ''}" data-t="${t}">${t}</button>`).join('');
+  for (const b of $('topics').querySelectorAll('button')) b.onclick = () => {
+    const cur = new Set(topicsOn()); cur.has(b.dataset.t) ? cur.delete(b.dataset.t) : cur.add(b.dataset.t);
+    layout.topics = all.filter(t => cur.has(t)); renderTopics();
+  };
+}
+function nextTicker() {
+  const items = [];
+  for (const t of topicsOn()) for (const m of (S.ticker || {})[t] || []) items.push([t, m]);
+  if (!items.length) { $('tk-topic').textContent = '—'; $('tk-msg').textContent = ''; return; }
+  const [t, m] = items[tkI++ % items.length];
+  $('tk-msg').style.opacity = 0;
+  setTimeout(() => { $('tk-topic').textContent = t; $('tk-msg').textContent = m; $('tk-msg').style.opacity = 1; }, 400);
+}
+setInterval(nextTicker, 6000);
+function flash(t) { $('tk-topic').textContent = 'INFO'; $('tk-msg').textContent = t; }
+function renderTop() {
+  const ic = $('icon'), k = S.icon || {};
+  ic.textContent = k.glyph || '◉'; ic.className = k.level || '';
+  $('mode').textContent = S.mode_label || '…';
+  $('profile').textContent = (S.profile_label || '') + (S.dry ? '  ·  ZKUŠEBNÍ REŽIM' : '');
+  const d = new Date();
+  $('clock').innerHTML = d.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })
+    + `<small>${d.toLocaleDateString('cs-CZ', { weekday: 'short', day: 'numeric', month: 'numeric' })}</small>`;
+}
+
+// ── data z kořene ───────────────────────────────────────────────────────────
+function apply(st) {
+  const first = !S.modules;
+  S = st;
+  renderTop(); renderCards();
+  if (first) { renderTopics(); nextTicker(); }
+  const srcs = sources(), sel = $('srcsel'), keep = sel.value;
+  setHtml(sel, srcs.map(s => `<option value="${s.id}">${esc(s.title)}</option>`).join(''));
+  if (keep) sel.value = keep;
+  for (const [, w] of wins) renderWin(w);
+}
+function connect() {
+  const es = new EventSource('/events');
+  es.onmessage = e => { $('conn').style.display = 'none'; try { apply(JSON.parse(e.data)); } catch (x) {} };
+  es.onerror = () => { $('conn').style.display = 'block'; };
+}
+const DEFAULT = () => {
+  const D = $('desk'), W = D.clientWidth, H = D.clientHeight - 44;
+  return { wins: [
+    { id: 'w-sys', src: 'sys', x: 10, y: 10, w: W * 0.36, h: H * 0.55 },
+    { id: 'w-glasses', src: 'glasses', x: W * 0.38, y: 10, w: W * 0.30, h: H * 0.55 },
+    { id: 'w-mods', src: 'modules', x: W * 0.70, y: 10, w: W * 0.29, h: H * 0.55 },
+    { id: 'w-log', src: 'log', x: 10, y: H * 0.58, w: W * 0.97, h: H * 0.40, op: 0.8 },
+  ] };
+};
+fetch('/layout').then(r => r.json()).catch(() => ({})).then(l => {
+  setZoom((l && l.zoom) || 1.2);                     // v brýlích je 1920×1080 drobné, výchozí 120 %
+  layout = (l && l.wins && l.wins.length) ? l : { ...DEFAULT(), topics: l && l.topics, zoom: layout.zoom };
+  for (const s of layout.wins) mkWin(s);
+  renderDock();
+  fetch('/state').then(r => r.json()).then(apply).catch(() => {});
+  connect();
+});
+setInterval(renderTop, 15000);
+</script>
+</body>
+</html>

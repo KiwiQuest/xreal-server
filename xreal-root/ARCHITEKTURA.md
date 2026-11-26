@@ -110,7 +110,12 @@ Modul = třída odvozená od `Module` + `MODULE = Třída`. Dostává:
 řadí podle `z`, kořen je vždy nahoře (z = 1000). Tím může běžet víc modulů nad sebou.
 Výjimka v modulu se zaloguje, po 3 chybách se modul vypne a rádce to oznámí; kořen běží dál.
 
-**Domov (`home`)** je kořenové prostředí v brýlích: dlaždice ukotvené v prostoru podle IMU (yaw z gyra,
+**Kořenová plocha** (`ui_server.py`, `ui/index.html`) je hlavní prostředí v brýlích ve stylu `yolo.html`:
+stavový řádek s rotujícími zprávami, okna modulů 1..N (vedle sebe / přes sebe s průhledností) a pevný panel
+control modulů. Modul se na ní ukáže přes `ui()` (`window` = jde otevřít jako okno, `control` = karta v panelu,
+`lines`, `actions`) a reaguje přes `ui_action()`. Běží v režimu Vše v brýlích a po zavření víka (`Plan.ui`).
+
+**Domov (`home`)** je overlay menu dlaždic v brýlích: dlaždice ukotvené v prostoru podle IMU (yaw z gyra,
 pitch z gravitace), výběr zaměřovačem uprostřed pohledu. Když je otevřený, drží vstup (`captures_input`):
 krátký stisk tlačítka a gesta jdou jemu, myš hlavou se pozastaví, podržení tlačítka (menu) zůstává kořeni.
 Moduly do něj přidávají dlaždice přes `home_tiles()`.

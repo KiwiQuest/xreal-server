@@ -73,6 +73,14 @@ class Module:
         Ostatní moduly dostanou on_focus(True), podržení tlačítka (menu) zůstává kořeni."""
         return False
 
+    def ui(self) -> dict:
+        """Co ukázat na kořenové ploše: {"window": bool (jde otevřít jako okno), "control": bool
+        (karta v panelu control modulů), "lines": [...], "actions": [{"id", "label", "on"}]}."""
+        return {}
+
+    def ui_action(self, action: str, value=None):
+        """Klik na akci z kořenové plochy."""
+
     def on_press(self, t: float):
         """Krátký stisk tlačítka brýlí, když modul drží vstup (captures_input)."""
 

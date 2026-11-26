@@ -208,6 +208,14 @@ class Keyboard(Module):
         from .home import Tile
         return [Tile("keyboard", "Klávesnice", "zavřít" if self.open else "psaní myší hlavou", "⌨", self.toggle)]
 
+    def ui(self):
+        return {"window": False, "control": True, "lines": ["Píše do aktivního okna, myší hlavou."],
+                "actions": [{"id": "toggle", "label": "Klávesnice", "on": self.open}]}
+
+    def ui_action(self, action, value=None):
+        if action == "toggle":
+            self.toggle()
+
     def status(self):
         return "otevřená" if self.open else ""
 

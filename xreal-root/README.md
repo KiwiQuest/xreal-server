@@ -46,9 +46,25 @@ jsou brýle, a poprvé otevře okno nastavení, kde ho jedním klikem potvrdíš
 cesta zařízení, kód EDID a jméno, takže se brýle najdou i jako třetí monitor nebo na jiném portu.
 Displej notebooku zhasne (režim 3) až po potvrzení, ať se omylem nevypne obyčejný monitor.
 
-## Domov: prostředí v brýlích
+## Kořenová plocha
 
-Po zavření víka (a kdykoliv z menu) se v brýlích otevře **Domov**: dlaždice visí v prostoru kolem tebe,
+V režimu „Vše v brýlích“ a po zavření víka se přes celé brýle otevře **plocha** ve stylu `ariel/static/yolo.html`
+(černé pozadí = v brýlích průhledné, zelený HUD):
+
+- **stavový řádek**: hlavní stavová ikona, režim, rotující zprávy na zvolená témata (Systém, Brýle, Moduly, Čas,
+  Info; témata se zapínají vpravo nahoře), hodiny;
+- **plocha modulů**: okna 1..N (vestavěná Systém, Brýle, Moduly, Log a okna modulů). Okna jdou posouvat, měnit
+  velikost, skrýt do lišty, maximalizovat, přepínat průhlednost (◐) a skládat **vedle sebe** nebo **přes sebe**;
+  „+ OKNO“ přidá další, „ULOŽIT“ zapamatuje rozložení, A−/A+ mění velikost písma;
+- **panel control modulů** vpravo: karty se nepřekrývají, aktivní karta ukazuje informace a ovládání modulu.
+
+Plocha je webová stránka z lokálního serveru kořene (`127.0.0.1:8790`, jen tento počítač) v okně Chrome / Edge bez
+rámečku, které kořen položí přesně na monitor brýlí. Data jdou živě (Server-Sent Events), příkazy přijímá jen
+od vlastní stránky. Moduly na ni přidávají obsah přes `ui()` a `ui_action()`.
+
+## Domov: overlay menu dlaždic
+
+Z menu (podržet tlačítko brýlí) nebo z plochy se otevře **Domov**: dlaždice visí v prostoru kolem tebe,
 otočením hlavy se mezi nimi rozhlížíš a uprostřed pohledu je zaměřovač. Dlaždici vybereš pohledem
 (podržet 1,6 s, kroužek se naplní) nebo krátkým stiskem tlačítka brýlí. Pozadí je černé, takže v brýlích
 je průhledné a Domov visí ve skutečném prostoru. Když se ztratí z dohledu, sám se po 3 s vrátí před tebe.
@@ -88,6 +104,8 @@ V systray (pravé tlačítko): stav, ruční **Režim bez rukou** (stolní PC, J
 | `koren/states.py` | stavový automat DESK / BAG / WAITING / SUSPEND |
 | `koren/profiles.py` | provozní režimy Tray / GUI na monitoru / Vše v brýlích: co v nich běží |
 | `koren/settings.py` | okno nastavení a stavu |
+| `koren/ui_server.py`, `koren/ui/index.html`, `koren/ui_window.py` | kořenová plocha: server, stránka, okno přes brýle |
+| `koren/sysinfo.py` | CPU, paměť, baterie bez knihoven |
 | `koren/displays.py` | monitory podle jména a EDID, odhad a potvrzení monitoru brýlí |
 | `koren/advisor.py` | rádce: jaké ovládání má uživatel, co mu ukázat, poznání potíží |
 | `koren/gestures.py`, `koren/menu.py` | kývnutí, zavrtění, podržení tlačítka, menu ovládané hlavou |
