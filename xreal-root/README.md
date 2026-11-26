@@ -102,6 +102,12 @@ Tváře v panelu → Otevřít okno) ukazuje živé video z kamery a rámečky k
    přes živé video, zavírá se tlačítkem nebo **zavrtěním hlavou**. **JEN POPISKY** skryje video (černá = v
    brýlích průhledná), zůstanou jen jména (zatím bez kalibrace kamera → displej, takže přibližně).
 
+**YOLO (tlačítko OBJEKTY):** celé YOLO z Arielu (`ariel/core/vision.py`) běží v kořeni ve vlastním vlákně nad
+stejnou kamerou: postavy a věci kolem s českými jmény, rámečky nebo obrysy (seg), model n / s / m a zařízení
+NPU / GPU / CPU / PyTorch se přepínají kliknutím (nastavení sdílí s Arielem, `ariel/data/yolo_config.json`,
+modely z `ariel/models`). Na NPU yolo11n-seg ~17 ms na snímek. Když YOLO najde postavu, jméno poznané tváře
+visí nad hlavou celé postavy. Kdo to je, určuje rozpoznání tváře (YOLO nemá třídu obličej ani identitu).
+
 Bez okna: menu brýlí → „Tváře: uložit tvář před sebou“ / „Tváře: kdo je přede mnou“ (kamera se zapne sama
 na dobu potřebnou k akci). Jistě poznané tváře si samy přidávají nové snímky (jiné úhly a světlo), nejvýš
 jeden za 90 s na osobu.
@@ -151,7 +157,7 @@ V systray (pravé tlačítko): stav, ruční **Režim bez rukou** (stolní PC, J
 | `koren/glasses.py` | jediné spojení s brýlemi (IMU, tlačítko, přítomnost na USB) |
 | `koren/win.py` | systray, víko, hibernace, USB, fyzický vstup (ctypes) |
 | `koren/modules/` | moduly: `home` (Domov v brýlích), `keyboard`, `head_mouse`, `clock`, `voice`, `faces` (+ `faces_view.html`) |
-| `koren/faces/` | Tváře: kamera, detekce a otisk (YuNet + SFace), sledování a rozpoznání, šifrovaná databáze osob a fronta |
+| `koren/faces/` | Tváře: kamera, detekce a otisk (YuNet + SFace), sledování a rozpoznání, šifrovaná databáze osob a fronta, YOLO (`yolo.py`) |
 | `tvare_install.bat`, `models/faces/` | instalace knihoven a modelů pro Tváře (modely nejsou v gitu) |
 | `tests/` | testy čisté logiky |
 | `koren_config.json`, `logs/` | vznikají za běhu, nejsou v gitu |

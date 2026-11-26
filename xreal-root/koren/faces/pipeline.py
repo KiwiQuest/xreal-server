@@ -23,6 +23,7 @@ from . import DATA_DIR
 from .engine import FaceEngine, jpg
 from .recog import MAYBE, THRESHOLD, Gallery, Tracker, diverse, mean_unit
 from .store import Store, emb_dec
+from .yolo import YoloWorker, attach
 
 COLLECT_WANT = 8          # vzorků na uložení
 COLLECT_S = 8.0           # nejdéle tolik sekund sbírat
@@ -64,6 +65,8 @@ class FacesService:
         self._learned = {}
         self._wake_train = threading.Event()
         self._stop = threading.Event()
+        self.yolo = YoloWorker(self._frame, log=log)       # objekty a postavy (YOLO z Arielu), vlastní vlákno
+        self.yolo.on = bool(cfg.get("yolo", True))
         self._th = threading.Thread(target=self._loop, name="faces", daemon=True)
         self._tt = threading.Thread(target=self._trainer, name="faces-train", daemon=True)
 
@@ -71,7 +74,12 @@ class FacesService:
     def start(self):
         self._th.start()
         self._tt.start()
+        self.yolo.start()
         self._wake_train.set()
+
+    def _frame(self):
+        cam = self.cam
+        return cam.latest() if cam is not None and self.state == "on" else (None, 0.0, 0)
 
     def stop(self):
         self._stop.set()
@@ -80,6 +88,7 @@ class FacesService:
             self._jcond.notify_all()
         self._th.join(timeout=3)
         self._tt.join(timeout=3)
+        self.yolo.stop()
         self._close_cam()
         try:
             if self.store.dirty:
@@ -401,6 +410,14 @@ class FacesService:
     def tracks(self) -> dict:
         self.viewer()
         d = dict(self._tracks_json)
+        objs = self.yolo.fresh()
+        faces = [dict(t) for t in d["tracks"]]
+        for fi, di in attach(faces, objs).items():          # jméno nad celou postavou
+            faces[fi]["body"] = objs[di]["box"]
+            objs[di] = dict(objs[di], face=faces[fi]["id"])
+        d["tracks"], d["objects"] = faces, objs
+        y = self.yolo
+        d["yolo"] = {"on": y.on, "status": y.status, "fps": y.fps, "ms": y.ms, **y.cfg}
         d.update(self.summary())
         return d
 

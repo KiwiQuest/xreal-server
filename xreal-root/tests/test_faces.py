@@ -110,6 +110,16 @@ class TrackerTest(unittest.TestCase):
         self.assertEqual(t2.level, "maybe")
 
 
+class YoloAttachTest(unittest.TestCase):
+    def test_face_goes_to_its_body(self):
+        from koren.faces.yolo import attach
+        faces = [{"x": 0.62, "y": 0.12, "w": 0.06, "h": 0.1}, {"x": 0.1, "y": 0.6, "w": 0.05, "h": 0.08}]
+        dets = [{"cls": 0, "box": [0.05, 0.1, 0.3, 0.95]},          # postava vlevo, tvář 2 je u ní moc nízko
+                {"cls": 56, "box": [0.5, 0.0, 0.9, 1.0]},           # židle se nepočítá
+                {"cls": 0, "box": [0.55, 0.08, 0.8, 0.98]}]
+        self.assertEqual(attach(faces, dets), {0: 2})
+
+
 @needs_np
 @unittest.skipUnless(_crypto(), "chybí cryptography")
 class StoreTest(unittest.TestCase):

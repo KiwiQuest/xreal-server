@@ -26,6 +26,8 @@
   #video { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
   body.ar #video { visibility:hidden; }           /* jen popisky: černé pozadí = průhledné brýle */
   #boxes { position:absolute; inset:0; pointer-events:none; }
+  #objs { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .opts { display:flex; flex-wrap:wrap; gap:6px; margin:4px 0 10px; }
   .box { position:absolute; border:2px solid #8fd8ff; border-radius:6px; pointer-events:auto; cursor:pointer; }
   .box.known { border-color:#00ff80; }
   .box.maybe { border-color:#ffd200; border-style:dashed; }
@@ -88,11 +90,13 @@
   <button id="b-save" class="big" title="uložit největší tvář v záběru">+ ULOŽIT TVÁŘ</button>
   <button id="b-people">LIDÉ</button>
   <button id="b-queue">FRONTA</button>
+  <button id="b-yolo" title="YOLO: postavy a věci kolem, model a zařízení">OBJEKTY</button>
   <button id="b-ar" title="skrýt video, nechat jen jména nad lidmi">JEN POPISKY</button>
   <button id="b-cam" title="zkusit jinou kameru">KAMERA ⟳</button>
 </div>
 <div id="stage">
   <img id="video" alt="">
+  <canvas id="objs"></canvas>
   <div id="boxes"></div>
   <div id="msg"></div>
 </div>
@@ -157,8 +161,35 @@ function renderBoxes() {
     else { n = t.small ? 'tvář (daleko)' : '+ uložit tvář'; d = t.small ? 'přibliž se' : 'klikni'; }
     const prog = t.collect ? `<div class="prog"><div style="width:${100 * t.collect[0] / t.collect[1]}%"></div></div>` : '';
     setHtml(el, `<div class="lab"><div class="n">${n}</div>${d ? `<div class="d">${d}</div>` : ''}</div>${prog}`);
+    // YOLO našlo postavu: jméno visí nad hlavou celé postavy, ne jen nad rámečkem tváře
+    const lab = el.firstChild;
+    const up = t.body ? Math.max(0, (t.y - t.body[1]) * r.h) : 0;
+    lab.style.transform = `translate(-50%, ${-6 - up}px)`;
   }
   for (const [id, el] of boxEls) if (!seen.has(id)) { el.remove(); boxEls.delete(id); }
+  renderObjects(r);
+}
+// objekty z YOLO: tenké rámečky / obrysy a česká jména, nejdou kliknout (neruší výběr tváří)
+function renderObjects(r) {
+  const cv = $('objs'), st = $('stage');
+  if (cv.width !== st.clientWidth || cv.height !== st.clientHeight) { cv.width = st.clientWidth; cv.height = st.clientHeight; }
+  const c = cv.getContext('2d');
+  c.clearRect(0, 0, cv.width, cv.height);
+  for (const o of T.objects || []) {
+    const [x1, y1, x2, y2] = o.box, X = r.x + x1 * r.w, Y = r.y + y1 * r.h, W = (x2 - x1) * r.w, H = (y2 - y1) * r.h;
+    const col = o.face != null ? '#00ff80' : o.color;
+    c.strokeStyle = col; c.lineWidth = o.face != null ? 1.5 : 2; c.globalAlpha = o.face != null ? 0.5 : 0.85;
+    if (o.poly && o.poly.length > 2) {
+      c.beginPath(); o.poly.forEach(([px, py], i) => i ? c.lineTo(r.x + px * r.w, r.y + py * r.h) : c.moveTo(r.x + px * r.w, r.y + py * r.h));
+      c.closePath(); c.fillStyle = col; c.globalAlpha = 0.18; c.fill(); c.globalAlpha = 0.85; c.stroke();
+    } else c.strokeRect(X, Y, W, H);
+    c.globalAlpha = 1;
+    if (o.face != null) continue;                    // postavu s tváří popisuje jméno
+    const txt = `${o.name} ${Math.round(o.conf * 100)} %`;
+    c.font = '14px Courier New'; const tw = c.measureText(txt).width + 8;
+    c.fillStyle = 'rgba(0,12,6,0.75)'; c.fillRect(X, Math.max(0, Y - 18), tw, 18);
+    c.fillStyle = o.color; c.fillText(txt, X + 4, Math.max(13, Y - 5));
+  }
 }
 $('boxes').addEventListener('click', e => {
   const b = e.target.closest('.box'); if (!b) return;
@@ -178,6 +209,9 @@ function renderBar() {
   $('b-queue').textContent = asks ? `FRONTA ⚠${asks}` : q ? `FRONTA ${q}` : 'FRONTA';
   $('b-queue').className = asks ? 'warn' : side === 'queue' ? 'on' : '';
   $('b-people').className = side === 'people' ? 'on' : '';
+  const y = T.yolo || {};
+  $('b-yolo').className = side === 'yolo' ? 'on' : y.on ? '' : 'warn';
+  $('b-yolo').textContent = y.on ? 'OBJEKTY' : 'OBJEKTY ✕';
   $('b-ar').className = ar ? 'on' : '';
   document.body.classList.toggle('ar', ar);
   const m = $('msg');
@@ -190,6 +224,7 @@ function renderBar() {
 $('b-save').onclick = () => cmd('enroll', null);
 $('b-people').onclick = () => { side = side === 'people' ? '' : 'people'; renderSide(); renderBar(); };
 $('b-queue').onclick = () => { side = side === 'queue' ? '' : 'queue'; renderSide(); renderBar(); };
+$('b-yolo').onclick = () => { side = side === 'yolo' ? '' : 'yolo'; renderSide(); renderBar(); };
 $('b-ar').onclick = () => { ar = !ar; try { localStorage.setItem('faces.ar', ar ? '1' : '0'); } catch (e) {} renderBar(); };
 $('b-cam').onclick = () => cmd('nextcam');
 
@@ -216,10 +251,28 @@ function renderSide() {
           <div class="acts"><button class="big" data-jid="${j.id}" data-same="1">ANO, STEJNÁ OSOBA</button>
           <button class="big" data-jid="${j.id}" data-same="0">NE, NOVÁ OSOBA</button></div>` : ''}</div>`;
     }).join('') : '<div class="hint">Fronta je prázdná.</div>'));
+  } else if (side === 'yolo') {
+    const y = T.yolo || {}, opt = (k, v, l) => `<button class="${y[k] === v ? 'on' : ''}" data-k="${k}" data-v="${v}">${l}</button>`;
+    const counts = {};
+    for (const o of T.objects || []) counts[o.name] = (counts[o.name] || 0) + 1;
+    // tlačítka zvlášť od živých čísel: nepřekreslují se pod kurzorem myši hlavou
+    setHtml(el, `<h4>OBJEKTY (YOLO)</h4>
+      <div class="opts"><button class="big ${y.on ? 'on' : ''}" data-a="yolo">${y.on ? 'ZAPNUTO' : 'VYPNUTO'}</button></div>
+      <div class="hint" id="yolive"></div>
+      <h4>Model</h4><div class="opts">${opt('size', 'n', 'n rychlý')}${opt('size', 's', 's')}${opt('size', 'm', 'm přesný')}</div>
+      <div class="opts">${opt('task', 'det', 'rámečky')}${opt('task', 'seg', 'obrysy')}</div>
+      <h4>Zařízení</h4><div class="opts">${opt('backend', 'openvino:npu', 'NPU')}${opt('backend', 'openvino:gpu', 'GPU')}
+        ${opt('backend', 'openvino:cpu', 'CPU')}${opt('backend', 'torch:cpu', 'PyTorch')}</div>
+      <h4>V záběru</h4><div class="hint" id="yocount"></div>
+      <div class="hint">YOLO hledá postavy a věci, jméno člověka určuje rozpoznání tváře.</div>`);
+    setHtml($('yolive'), esc(y.status || '') + (y.on && y.fps ? ` · ${y.fps} sn/s · ${y.ms} ms` : ''));
+    setHtml($('yocount'), Object.entries(counts).map(([n, k]) => `${esc(n)} ${k}×`).join(' · ') || 'nic');
   } else setHtml(el, '');
 }
 $('side').addEventListener('click', e => {
   const r = e.target.closest('.row'); if (r) { cmd('card', r.dataset.pid); return; }
+  const o = e.target.closest('button[data-k]'); if (o) { cmd('yolo_set', { [o.dataset.k]: o.dataset.v }); return; }
+  if (e.target.closest('button[data-a=yolo]')) { cmd('yolo'); return; }
   const b = e.target.closest('button[data-jid]');
   if (b) cmd('resolve', { jid: b.dataset.jid, same: b.dataset.same === '1' });
 });

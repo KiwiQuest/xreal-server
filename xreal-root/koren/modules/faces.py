@@ -16,10 +16,15 @@ from . import Module
 VIEW = os.path.join(os.path.dirname(os.path.abspath(__file__)), "faces_view.html")
 
 
+def svc_yolo_on(svc) -> bool:
+    return bool(svc and svc.yolo.on)
+
+
 class Faces(Module):
     id = "faces"
     name = "Tváře"
-    description = "Pozná lidi kolem: vyber tvář, uloží se, natrénuje a pak se nad člověkem ukáže jméno."
+    description = ("Pozná lidi kolem: vyber tvář, uloží se, natrénuje a pak se nad člověkem ukáže jméno. "
+                   "YOLO k tomu ukazuje postavy a věci kolem.")
     z = 120
     needs = ("display",)
 
@@ -142,6 +147,7 @@ class Faces(Module):
                             {"id": "enroll", "label": "Uložit tvář před sebou"},
                             {"id": "card_front", "label": "Karta osoby před sebou"},
                             {"id": "hold", "label": "Kamera stále", "on": s["hold"]},
+                            {"id": "yolo", "label": "Objekty (YOLO)", "on": svc_yolo_on(self.svc)},
                             {"id": "nextcam", "label": "Další kamera"}]}
 
     def ui_action(self, action, value=None):
@@ -186,6 +192,10 @@ class Faces(Module):
             svc.hold(not svc._hold)
         elif action == "nextcam":
             svc.next_camera()
+        elif action == "yolo":
+            svc.yolo.on = not svc.yolo.on
+        elif action == "yolo_set":
+            svc.yolo.set(**{k: v[k] for k in ("size", "task", "backend") if k in v})
 
     def _delete(self, pid):
         if self.svc and self.svc.store.delete(pid):
