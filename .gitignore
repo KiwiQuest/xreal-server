@@ -10,6 +10,7 @@
 !/rgb-test/
 !/Xreal mouse/
 !/xreal-web/
+!/xreal-root/
 
 # Zamerne mimo repo (soukrome / Unity / buildy):
 #   Xreal Unity/, HW KOMPONENTY/, XrealGalaxi/, XrealGuns*/, XrealVisualizer/, Xreal-Effects/, _archiv/, xreal-sim/, Adrduino/
@@ -57,3 +58,7 @@ models/
 xreal_config.json
 **/data/camera.json
 
+
+# Koren: lokalni nastaveni
+**/koren_config.json
+**/koren_ui_layout.json
